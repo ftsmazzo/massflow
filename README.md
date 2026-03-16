@@ -75,6 +75,10 @@ Acesse http://localhost:5173 (proxy para API em :8000).
 4. **Serviço Frontend:** build context = pasta `frontend/`, Dockerfile em `frontend/Dockerfile`; porta 80.
 5. **PostgreSQL:** serviço no Easypanel ou conexão externa; passar DATABASE_URL ao backend.
 
+## Regras de trabalho
+
+Ver **REGRAS_DE_TRABALHO.md** (repositório, Easypanel, .env local, banco na implantação, commit + push).
+
 ## Licença
 
 Projeto interno — Projetos-FabriaIA.
