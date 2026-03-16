@@ -36,11 +36,7 @@ class Settings(BaseSettings):
     EVOLUTION_API_URL: str = os.getenv("EVOLUTION_API_URL", "http://localhost:8080")
     EVOLUTION_API_KEY: str = os.getenv("EVOLUTION_API_KEY", "")
 
-    # Agentes SaaS (integração assinatura/créditos) - opcional
-    AGENTES_SAAS_API_URL: str = os.getenv("AGENTES_SAAS_API_URL", "")
-    AGENTES_SAAS_API_KEY: str = os.getenv("AGENTES_SAAS_API_KEY", "")
-
-    # Redis (opcional - filas)
+    # Redis (filas / cache)
     REDIS_URL: str = os.getenv("REDIS_URL", "")
 
     @property
