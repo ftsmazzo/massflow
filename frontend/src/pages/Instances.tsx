@@ -28,6 +28,20 @@ export default function Instances() {
       .catch((e) => setError(e.response?.data?.detail ?? 'Falha ao gerar QR/conexão.'))
   }
 
+  function handleDisconnect(id: number) {
+    setError('')
+    instancesApi.disconnect(id)
+      .then((updated) => setList((prev) => prev.map((i) => (i.id === id ? updated.data : i))))
+      .catch((e) => setError(e.response?.data?.detail ?? 'Falha ao desconectar.'))
+  }
+
+  function handleRefresh(id: number) {
+    setError('')
+    instancesApi.refresh(id)
+      .then((updated) => setList((prev) => prev.map((i) => (i.id === id ? updated.data : i))))
+      .catch((e) => setError(e.response?.data?.detail ?? 'Falha ao atualizar status.'))
+  }
+
   if (loading) return <div className="instances-loading">Carregando instâncias…</div>
   if (error && list.length === 0) return <div className="instances-error">{error}</div>
 
@@ -100,12 +114,32 @@ export default function Instances() {
               <div className="instances-card-actions">
                 <button
                   type="button"
-                  className="instances-btn-qr"
-                  onClick={() => handleConnect(inst.id)}
-                  title={inst.status === STATUS_CONNECTED ? 'Gerar novo QR / reconectar' : 'Conectar via QR Code'}
+                  className="instances-btn-refresh"
+                  onClick={() => handleRefresh(inst.id)}
+                  title="Atualizar status (consultar Evolution API)"
+                  aria-label="Atualizar"
                 >
-                  QR Code
+                  ↻
                 </button>
+                {inst.status === STATUS_CONNECTED ? (
+                  <button
+                    type="button"
+                    className="instances-btn-disconnect"
+                    onClick={() => handleDisconnect(inst.id)}
+                    title="Desconectar do WhatsApp"
+                  >
+                    Desconectar
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="instances-btn-qr"
+                    onClick={() => handleConnect(inst.id)}
+                    title="Conectar via QR Code"
+                  >
+                    QR Code
+                  </button>
+                )}
               </div>
             </article>
           ))}

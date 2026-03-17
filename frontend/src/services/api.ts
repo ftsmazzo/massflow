@@ -112,5 +112,7 @@ export const instancesApi = {
     api.post<Instance>('/api/instances', data),
   connect: (id: number) =>
     api.post<{ pairing_code?: string; code?: string; count?: number }>(`/api/instances/${id}/connect`),
+  disconnect: (id: number) => api.post<Instance>(`/api/instances/${id}/disconnect`),
+  refresh: (id: number) => api.post<Instance>(`/api/instances/${id}/refresh`),
   status: (id: number) => api.get<{ instance: string; connection_state: unknown }>(`/api/instances/${id}/status`),
 }

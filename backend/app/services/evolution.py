@@ -62,3 +62,15 @@ async def fetch_connection_state(api_url: str, api_key: str, instance_name: str)
             return r.json()
     except (httpx.HTTPError, Exception):
         return None
+
+
+async def disconnect_instance(api_url: str, api_key: str, instance_name: str) -> dict[str, Any]:
+    """Desconecta a instância do WhatsApp (Evolution API: DELETE /instance/logout)."""
+    base = _base(api_url)
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.delete(
+            f"{base}/instance/logout/{instance_name}",
+            headers=_headers(api_key),
+        )
+        r.raise_for_status()
+        return r.json() if r.content else {}

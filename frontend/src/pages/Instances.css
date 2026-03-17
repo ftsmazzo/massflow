@@ -188,10 +188,34 @@
 .instances-card-actions {
   margin-top: auto;
   padding-top: 0.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.instances-btn-refresh {
+  flex-shrink: 0;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 1.1rem;
+  cursor: pointer;
+  color: #475569;
+}
+
+.instances-btn-refresh:hover {
+  background: #e2e8f0;
+  color: #1a1d29;
 }
 
 .instances-btn-qr {
-  width: 100%;
+  flex: 1;
   padding: 0.5rem 1rem;
   background: #4f46e5;
   color: #fff;
@@ -204,6 +228,22 @@
 
 .instances-btn-qr:hover {
   background: #4338ca;
+}
+
+.instances-btn-disconnect {
+  flex: 1;
+  padding: 0.5rem 1rem;
+  background: #dc2626;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.instances-btn-disconnect:hover {
+  background: #b91c1c;
 }
 
 /* --- Empty state --- */

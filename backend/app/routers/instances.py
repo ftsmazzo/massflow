@@ -19,7 +19,12 @@ from app.schemas.evolution_instance import (
     InstanceResponse,
     InstanceConnectResponse,
 )
-from app.services.evolution import create_instance as evo_create, connect_instance, fetch_connection_state
+from app.services.evolution import (
+    create_instance as evo_create,
+    connect_instance,
+    fetch_connection_state,
+    disconnect_instance as evo_disconnect,
+)
 
 router = APIRouter(prefix="/instances", tags=["Instances"])
 
@@ -193,3 +198,64 @@ async def instance_status(
         raise HTTPException(status_code=403, detail="Sem acesso.")
     state = await fetch_connection_state(inst.api_url, inst.api_key, inst.name)
     return {"instance": inst.name, "connection_state": state}
+
+
+def _state_to_status(state: dict | None) -> str:
+    """Mapeia connection_state da Evolution para status local (connected, close, etc.)."""
+    if not state:
+        return "close"
+    s = (state.get("state") or state.get("status") or "").lower()
+    if s in ("open", "connected"):
+        return "connected"
+    return s or "close"
+
+
+@router.post("/{instance_id}/refresh", response_model=InstanceResponse)
+async def instance_refresh(
+    instance_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Atualiza status (e opcionalmente phone) da instância consultando a Evolution API."""
+    tenant = user.tenant
+    inst = db.query(EvolutionInstance).filter(EvolutionInstance.id == instance_id).first()
+    if not inst or (inst.owner == "tenant" and inst.tenant_id != tenant.id):
+        raise HTTPException(status_code=404, detail="Instância não encontrada.")
+    if inst.owner == "platform" and not _can_use_platform_instances(tenant):
+        raise HTTPException(status_code=403, detail="Sem acesso.")
+    try:
+        state = await fetch_connection_state(inst.api_url, inst.api_key, inst.name)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Evolution API: {str(e)}")
+    inst.status = _state_to_status(state)
+    # Evolution pode retornar instance?.owner no state; phone pode vir em outro campo
+    if state and not inst.phone_number:
+        owner = state.get("instance", {}).get("owner") or state.get("owner")
+        if isinstance(owner, str) and owner.isdigit():
+            inst.phone_number = owner
+    db.commit()
+    db.refresh(inst)
+    return inst
+
+
+@router.post("/{instance_id}/disconnect", response_model=InstanceResponse)
+async def instance_disconnect(
+    instance_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Desconecta a instância do WhatsApp (Evolution API logout) e atualiza status no banco."""
+    tenant = user.tenant
+    inst = db.query(EvolutionInstance).filter(EvolutionInstance.id == instance_id).first()
+    if not inst or (inst.owner == "tenant" and inst.tenant_id != tenant.id):
+        raise HTTPException(status_code=404, detail="Instância não encontrada.")
+    if inst.owner == "platform" and not _can_use_platform_instances(tenant):
+        raise HTTPException(status_code=403, detail="Sem acesso.")
+    try:
+        await evo_disconnect(inst.api_url, inst.api_key, inst.name)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Evolution API: {str(e)}")
+    inst.status = "close"
+    db.commit()
+    db.refresh(inst)
+    return inst
