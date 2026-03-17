@@ -16,11 +16,21 @@ export function getApiErrorMessage(err: unknown, fallback = 'Ocorreu um erro.'):
     const messages = detail.map((d) => (typeof d === 'object' && d && 'msg' in d ? d.msg : String(d)))
     return messages.filter(Boolean).join(' ') || fallback
   }
-  if (response?.status) return `Erro ${response.status}. ${fallback}`
+  if (response?.status) {
+    const url = (err as AxiosError).config?.url
+    const base = (err as AxiosError).config?.baseURL
+    const full = base ? (base + url) : url
+    return full
+      ? `Erro ${response.status}. URL: ${full} — ${fallback}`
+      : `Erro ${response.status}. ${fallback}`
+  }
   return fallback
 }
 
 const baseURL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
+
+/** URL base da API (vazia = requisições vão para o mesmo domínio do front; defina VITE_API_URL no build). */
+export const apiBaseURL = baseURL
 
 export const api = axios.create({
   baseURL,

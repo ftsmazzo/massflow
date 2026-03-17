@@ -9,7 +9,7 @@ Regras definidas para o desenvolvimento e implantação do projeto.
 - **Repositório GitHub:** https://github.com/ftsmazzo/massflow
 - **Easypanel:** 2 serviços via Dockerfile:
   - **Backend:** build a partir de `backend/Dockerfile` (contexto: pasta `backend/`)
-  - **Frontend:** build a partir de `frontend/Dockerfile` (contexto: pasta `frontend/`)
+  - **Frontend:** build a partir de `frontend/Dockerfile` (contexto: pasta `frontend/`). **Obrigatório:** definir **Build Arg** `VITE_API_URL` = URL do backend (ex: `https://...-backend....easypanel.host`), senão o front chama o próprio domínio e retorna 405.
 - **Banco de dados:** PostgreSQL no mesmo projeto Easypanel; banco `massflow` já criado. URL de conexão **interna** (entre serviços): fornecida nas variáveis de ambiente.
 
 ---

@@ -1,7 +1,11 @@
 # MassFlow Frontend - React/Vite
 # Build context: RAIZ do repositório (Easypanel e docker-compose).
+# No Easypanel: defina Build Arg VITE_API_URL com a URL do backend (ex: https://...-backend....easypanel.host)
 FROM node:20-alpine AS build
 WORKDIR /app
+
+ARG VITE_API_URL
+ENV VITE_API_URL=${VITE_API_URL}
 
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
