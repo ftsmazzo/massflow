@@ -7,7 +7,12 @@ import axios, { type AxiosError } from 'axios'
 /** Extrai mensagem de erro da resposta da API (FastAPI: detail string ou array de validação). */
 export function getApiErrorMessage(err: unknown, fallback = 'Ocorreu um erro.'): string {
   if (!err || typeof err !== 'object' || !('response' in err)) {
-    return 'Não foi possível conectar ao servidor. Em produção, verifique se a URL da API (VITE_API_URL) está correta.'
+    const ax = err as AxiosError
+    const url = ax.config?.baseURL ? `${ax.config.baseURL}${ax.config?.url ?? ''}` : ''
+    const hint = url
+      ? `Chamada: ${url}. Pode ser CORS (backend deve permitir a origem do front em CORS_ORIGINS ou CORS_ORIGIN_REGEX), rede ou URL incorreta.`
+      : 'URL da API vazia. Defina VITE_API_URL no build do frontend.'
+    return `Não foi possível conectar ao servidor. ${hint}`
   }
   const response = (err as AxiosError<{ detail?: string | Array<{ msg?: string; loc?: unknown }> }>).response
   const detail = response?.data?.detail

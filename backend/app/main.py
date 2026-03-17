@@ -49,8 +49,8 @@ cors_kw: dict = {
     "allow_methods": ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     "allow_headers": ["*"],
 }
-if getattr(settings, "CORS_ORIGIN_REGEX", None) and settings.CORS_ORIGIN_REGEX.strip():
-    cors_kw["allow_origin_regex"] = settings.CORS_ORIGIN_REGEX.strip()
+if getattr(settings, "CORS_ORIGIN_REGEX", None) and (s := (settings.CORS_ORIGIN_REGEX or "").strip()):
+    cors_kw["allow_origin_regex"] = s
 app.add_middleware(CORSMiddleware, **cors_kw)
 
 
