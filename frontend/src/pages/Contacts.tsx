@@ -163,8 +163,6 @@ export default function Contacts() {
       {showForm && (
         <ContactForm
           contact={editingContact}
-          lists={lists}
-          tags={tags}
           onClose={() => { setShowForm(false); setEditingContact(null) }}
           onSuccess={handleFormSuccess}
         />
@@ -173,7 +171,6 @@ export default function Contacts() {
       {showImport && (
         <ImportCsvModal
           lists={lists}
-          tags={tags}
           onClose={() => setShowImport(false)}
           onSuccess={() => { setShowImport(false); loadContacts(); loadListsAndTags() }}
         />
@@ -184,14 +181,10 @@ export default function Contacts() {
 
 function ContactForm({
   contact,
-  lists,
-  tags,
   onClose,
   onSuccess,
 }: {
   contact: Contact | null
-  lists: ListItem[]
-  tags: TagItem[]
   onClose: () => void
   onSuccess: () => void
 }) {
@@ -259,12 +252,10 @@ function ContactForm({
 
 function ImportCsvModal({
   lists,
-  tags,
   onClose,
   onSuccess,
 }: {
   lists: ListItem[]
-  tags: TagItem[]
   onClose: () => void
   onSuccess: () => void
 }) {
