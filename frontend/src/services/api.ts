@@ -20,7 +20,7 @@ export function getApiErrorMessage(err: unknown, fallback = 'Ocorreu um erro.'):
   return fallback
 }
 
-const baseURL = import.meta.env.VITE_API_URL ?? ''
+const baseURL = (import.meta.env.VITE_API_URL ?? '').replace(/\/+$/, '')
 
 export const api = axios.create({
   baseURL,

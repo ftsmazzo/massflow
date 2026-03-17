@@ -41,7 +41,18 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        origins = []
+        for o in self.CORS_ORIGINS.split(","):
+            o = o.strip()
+            if not o:
+                continue
+            # Corrige duplicação comum: "https://https://dominio" -> "https://dominio"
+            if o.startswith("https://https://"):
+                o = "https://" + o[16:]
+            elif o.startswith("http://http://"):
+                o = "http://" + o[13:]
+            origins.append(o)
+        return origins
 
     class Config:
         env_file = ".env"

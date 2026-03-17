@@ -25,12 +25,8 @@ def slugify(name: str) -> str:
     return "".join(c for c in s if c.isalnum() or c == "-").strip("-") or "tenant"
 
 
-@router.post("/register", response_model=Token)
-def register(
-    body: RegisterRequest,
-    db: Annotated[Session, Depends(get_db)],
-):
-    """Cria um novo tenant e o primeiro usuário (admin). Retorna token JWT."""
+def _register_impl(body: RegisterRequest, db: Session):
+    """Lógica de registro (reutilizada para rota com e sem barra final)."""
     if db.query(User).filter(User.email == body.email).first():
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -64,7 +60,18 @@ def register(
     return Token(access_token=token)
 
 
+@router.post("/register", response_model=Token)
+@router.post("/register/", response_model=Token)
+def register(
+    body: RegisterRequest,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Cria um novo tenant e o primeiro usuário (admin). Retorna token JWT."""
+    return _register_impl(body, db)
+
+
 @router.post("/login", response_model=Token)
+@router.post("/login/", response_model=Token)
 def login(
     body: LoginRequest,
     db: Annotated[Session, Depends(get_db)],
@@ -85,6 +92,7 @@ def login(
 
 
 @router.get("/me", response_model=UserResponse)
+@router.get("/me/", response_model=UserResponse)
 def me(user: Annotated[User, Depends(get_current_user)]):
     """Retorna o usuário autenticado."""
     return user
