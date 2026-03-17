@@ -1,10 +1,12 @@
 """
-Auth: registro (cria tenant + primeiro usuário), login, me
+Auth: registro (cria tenant + primeiro usuário), login, me.
+Register/Login aceitam Form (application/x-www-form-urlencoded) para não disparar
+preflight CORS (OPTIONS), evitando 405 em proxies que bloqueiam OPTIONS.
 """
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Form, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user, hash_password, verify_password, create_access_token
@@ -63,22 +65,27 @@ def _register_impl(body: RegisterRequest, db: Session):
 @router.post("/register", response_model=Token)
 @router.post("/register/", response_model=Token)
 def register(
-    body: RegisterRequest,
     db: Annotated[Session, Depends(get_db)],
+    email: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    tenant_name: Annotated[str, Form()],
+    name: Annotated[str | None, Form()] = None,
 ):
-    """Cria um novo tenant e o primeiro usuário (admin). Retorna token JWT."""
+    """Cria um novo tenant e o primeiro usuário (admin). Form para evitar preflight CORS."""
+    body = RegisterRequest(email=email, password=password, name=name, tenant_name=tenant_name)
     return _register_impl(body, db)
 
 
 @router.post("/login", response_model=Token)
 @router.post("/login/", response_model=Token)
 def login(
-    body: LoginRequest,
     db: Annotated[Session, Depends(get_db)],
+    email: Annotated[str, Form()],
+    password: Annotated[str, Form()],
 ):
-    """Login por e-mail e senha. Retorna token JWT."""
-    user = db.query(User).filter(User.email == body.email).first()
-    if not user or not verify_password(body.password, user.hashed_password):
+    """Login por e-mail e senha. Form para evitar preflight CORS."""
+    user = db.query(User).filter(User.email == email).first()
+    if not user or not verify_password(password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="E-mail ou senha incorretos",

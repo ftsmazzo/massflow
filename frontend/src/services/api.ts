@@ -50,11 +50,27 @@ export type Token = { access_token: string; token_type: string }
 export type User = { id: number; email: string; name: string | null; tenant_id: number; is_admin: boolean; is_active: boolean }
 export type Tenant = { id: number; name: string; slug: string; plan_type: number; credits_balance: number; active: boolean }
 
+/** Body em form-urlencoded para não disparar preflight CORS (evita 405 em proxy). */
+function authForm(data: Record<string, string | undefined>): URLSearchParams {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(data)) if (v != null && v !== '') p.set(k, v)
+  return p
+}
+
 export const authApi = {
   login: (email: string, password: string) =>
-    api.post<Token>('/api/auth/login', { email, password }),
+    api.post<Token>('/api/auth/login', authForm({ email, password }), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    }),
   register: (data: { email: string; password: string; name?: string; tenant_name: string }) =>
-    api.post<Token>('/api/auth/register', data),
+    api.post<Token>('/api/auth/register', authForm({
+      email: data.email,
+      password: data.password,
+      tenant_name: data.tenant_name,
+      name: data.name,
+    }), {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    }),
   me: () => api.get<User>('/api/auth/me'),
   tenant: () => api.get<Tenant>('/api/tenants/me'),
 }
