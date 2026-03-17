@@ -72,8 +72,17 @@ def register(
     name: Annotated[str | None, Form()] = None,
 ):
     """Cria um novo tenant e o primeiro usuário (admin). Form para evitar preflight CORS."""
-    body = RegisterRequest(email=email, password=password, name=name, tenant_name=tenant_name)
-    return _register_impl(body, db)
+    try:
+        body = RegisterRequest(email=email, password=password, name=name or None, tenant_name=tenant_name)
+        return _register_impl(body, db)
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e) or "Erro interno ao cadastrar",
+        ) from e
 
 
 @router.post("/login", response_model=Token)
