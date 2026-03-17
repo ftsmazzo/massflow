@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, tenants
+from app.routers import auth, tenants, instances
 
 
 app = FastAPI(
@@ -42,3 +42,4 @@ async def api_status():
 
 app.include_router(auth.router, prefix="/api")
 app.include_router(tenants.router, prefix="/api")
+app.include_router(instances.router, prefix="/api")
