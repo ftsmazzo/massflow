@@ -57,6 +57,12 @@ app.add_middleware(CORSMiddleware, **cors_kw)
 # Migrações: entrypoint.sh roda `alembic upgrade head` antes do uvicorn (deploy Easypanel).
 
 
+@app.get("/")
+async def root():
+    """Resposta na raiz para health check de proxies (GET /)."""
+    return {"status": "ok", "service": "massflow-api"}
+
+
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "massflow-api"}
