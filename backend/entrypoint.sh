@@ -3,11 +3,8 @@
 # Nada de steps manuais em shell para o banco.
 
 set -e
-echo "MassFlow Backend: aplicando banco..."
-python -c "
-from app.database import init_db
-init_db()
-print('Banco pronto.')
-"
+echo "MassFlow Backend: aplicando migrações..."
+alembic upgrade head
+echo "Banco pronto."
 echo "Iniciando API..."
 exec uvicorn app.main:app --host 0.0.0.0 --port 8000

@@ -21,6 +21,9 @@ engine = create_engine(
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
+# Importa modelos para que Base.metadata contenha todas as tabelas (create_all / Alembic)
+import app.models  # noqa: F401
+
 
 def get_db():
     """Dependency: sessão do banco por request."""

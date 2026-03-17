@@ -5,10 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.database import init_db
-
-# Routers serão incluídos conforme as fases
-# from app.routers import auth, tenants, leads, instances, campaigns
+from app.routers import auth, tenants
 
 
 app = FastAPI(
@@ -26,8 +23,7 @@ app.add_middleware(
 )
 
 
-# init_db() é chamado pelo entrypoint.sh antes de subir o uvicorn (deploy Easypanel).
-# Assim tabelas/migrações ocorrem na implantação, sem shell manual.
+# Migrações: entrypoint.sh roda `alembic upgrade head` antes do uvicorn (deploy Easypanel).
 
 
 @app.get("/health")
@@ -44,9 +40,5 @@ async def api_status():
     }
 
 
-# Incluir routers (descomentar nas fases)
-# app.include_router(auth.router, prefix="/api", tags=["Auth"])
-# app.include_router(tenants.router, prefix="/api", tags=["Tenants"])
-# app.include_router(leads.router, prefix="/api", tags=["Leads"])
-# app.include_router(instances.router, prefix="/api", tags=["Instances"])
-# app.include_router(campaigns.router, prefix="/api", tags=["Campaigns"])
+app.include_router(auth.router, prefix="/api")
+app.include_router(tenants.router, prefix="/api")
