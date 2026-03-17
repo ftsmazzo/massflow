@@ -34,15 +34,10 @@ export default function Shielding() {
       .finally(() => setLoading(false))
   }, [])
 
-  function update<K extends keyof ShieldingConfig>(key: K, value: ShieldingConfig[K]) {
-    setConfig((c) => ({ ...c, [key]: value }))
-    setSaved(false)
-  }
-
   function updateNested<K extends keyof ShieldingConfig>(
     key: K,
     nestedKey: keyof ShieldingConfig[K],
-    value: number | boolean | string[]
+    value: number | boolean | string | string[]
   ) {
     setConfig((c) => ({
       ...c,
