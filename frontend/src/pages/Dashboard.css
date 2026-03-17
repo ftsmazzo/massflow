@@ -1,0 +1,60 @@
+.dashboard h1 {
+  margin: 0 0 0.25rem;
+  font-size: 1.5rem;
+  color: #1a1d29;
+}
+
+.dashboard-tenant {
+  margin: 0 0 1.5rem;
+  color: #64748b;
+  font-size: 0.95rem;
+}
+
+.dashboard-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+}
+
+.dashboard-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.25rem;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid #e2e8f0;
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+
+.dashboard-card:not(.disabled):hover {
+  border-color: #4f46e5;
+  box-shadow: 0 4px 12px rgba(79, 70, 229, 0.15);
+}
+
+.dashboard-card h2 {
+  margin: 0 0 0.5rem;
+  font-size: 1.1rem;
+  color: #1a1d29;
+}
+
+.dashboard-card p {
+  margin: 0;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.dashboard-card.disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.app-loading {
+  min-height: 60vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-loading p {
+  color: #64748b;
+}

@@ -20,3 +20,45 @@
 .page small {
   color: #999;
 }
+
+.home-page {
+  background: linear-gradient(135deg, #1a1d29 0%, #252a3a 100%);
+  color: #fff;
+}
+
+.home-page p {
+  color: #c7d2fe;
+}
+
+.home-page small {
+  color: #94a3b8;
+}
+
+.home-actions {
+  margin-top: 1.5rem;
+  display: flex;
+  gap: 1rem;
+}
+
+.home-btn {
+  padding: 0.6rem 1.25rem;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: 500;
+  transition: opacity 0.2s;
+}
+
+.home-btn:hover {
+  opacity: 0.9;
+}
+
+.home-btn.primary {
+  background: #4f46e5;
+  color: #fff;
+}
+
+.home-btn:not(.primary) {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
