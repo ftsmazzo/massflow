@@ -3,6 +3,9 @@
 .env.local
 *.env
 
+# Dados sensíveis (CSV com api_key não deve ser commitado)
+instancias.csv
+
 # Python
 __pycache__/
 *.py[cod]

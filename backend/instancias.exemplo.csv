@@ -1,0 +1,3 @@
+name,instance_name,api_url,api_key,status
+MotriG - 01,assistente-01,https://motrig-evolution-api.easypanel.host,SUA_API_KEY,connected
+MotriG - 02,assistente-02,https://motrig-evolution-api.easypanel.host,SUA_API_KEY,connected
