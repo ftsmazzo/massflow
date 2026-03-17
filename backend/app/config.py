@@ -31,8 +31,8 @@ class Settings(BaseSettings):
         "CORS_ORIGINS",
         "http://localhost:5173,http://localhost:3000"
     )
-    # Regex para aceitar origens (ex.: https://.*\.easypanel\.host). Default: qualquer subdomínio Easypanel.
-    CORS_ORIGIN_REGEX: str = os.getenv("CORS_ORIGIN_REGEX", "https://[a-z0-9-]+\\.[a-z0-9-]+\\.easypanel\\.host")
+    # Regex para aceitar origens. Vazio = usa default abaixo (qualquer subdomínio Easypanel).
+    CORS_ORIGIN_REGEX: str = os.getenv("CORS_ORIGIN_REGEX", "")
 
     # Evolution API (base - instâncias por tenant no DB)
     EVOLUTION_API_URL: str = os.getenv("EVOLUTION_API_URL", "http://localhost:8080")
@@ -55,6 +55,14 @@ class Settings(BaseSettings):
                 o = "http://" + o[13:]
             origins.append(o)
         return origins
+
+    @property
+    def cors_origin_regex(self) -> str:
+        """Regex para CORS; se vazio, default permite *.easypanel.host."""
+        s = (self.CORS_ORIGIN_REGEX or "").strip()
+        if s:
+            return s
+        return r"https://[a-z0-9-]+\.[a-z0-9-]+\.easypanel\.host"
 
     class Config:
         env_file = ".env"
