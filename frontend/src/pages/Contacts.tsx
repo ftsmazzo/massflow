@@ -320,14 +320,14 @@ function ImportCsvModal({
         return
       }
       const header = rows[0].map((h) => h.toLowerCase().replace(/\s/g, '_'))
-      const phoneIdx = header.findIndex((h) => /phone|telefone|celular|whatsapp/.test(h)))
+      const phoneIdx = header.findIndex((h) => /phone|telefone|celular|whatsapp/.test(h))
       if (phoneIdx < 0) {
         setError('Coluna de telefone não encontrada. Use "phone", "telefone" ou "celular" no cabeçalho.')
         setLoading(false)
         return
       }
-      const nameIdx = header.findIndex((h) => /name|nome/.test(h)))
-      const emailIdx = header.findIndex((h) => /email|e-mail/.test(h)))
+      const nameIdx = header.findIndex((h) => /name|nome/.test(h))
+      const emailIdx = header.findIndex((h) => /email|e-mail/.test(h))
       const contacts: Array<{ phone: string; name?: string; email?: string; tags?: string[]; list_id?: number; opt_in?: boolean }> = []
       for (let i = 1; i < rows.length; i++) {
         const row = rows[i]
