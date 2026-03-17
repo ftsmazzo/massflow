@@ -20,6 +20,7 @@ from app.schemas.list_schema import (
     ListRemoveContactsBody,
 )
 from app.routers.contacts import _lead_to_response
+from app.schemas.contact import ContactResponse
 
 router = APIRouter(prefix="/lists", tags=["Lists"])
 
