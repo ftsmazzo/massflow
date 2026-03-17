@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { getApiErrorMessage } from '../services/api'
 import './Auth.css'
 
 export default function Register() {
@@ -21,10 +22,7 @@ export default function Register() {
       await register({ email, password, name: name || undefined, tenant_name: tenantName })
       navigate('/app', { replace: true })
     } catch (err: unknown) {
-      const msg = err && typeof err === 'object' && 'response' in err
-        ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-        : 'Falha ao cadastrar.'
-      setError(Array.isArray(msg) ? msg.join(' ') : String(msg ?? 'Falha ao cadastrar.'))
+      setError(getApiErrorMessage(err, 'Falha ao cadastrar.'))
     } finally {
       setLoading(false)
     }

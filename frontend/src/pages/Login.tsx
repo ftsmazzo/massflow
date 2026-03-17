@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import { getApiErrorMessage } from '../services/api'
 import './Auth.css'
 
 export default function Login() {
@@ -19,10 +20,7 @@ export default function Login() {
       await login(email, password)
       navigate('/app', { replace: true })
     } catch (err: unknown) {
-      const msg = err && typeof err === 'object' && 'response' in err
-        ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-        : 'Falha ao entrar.'
-      setError(Array.isArray(msg) ? msg.join(' ') : String(msg ?? 'Falha ao entrar.'))
+      setError(getApiErrorMessage(err, 'Falha ao entrar.'))
     } finally {
       setLoading(false)
     }

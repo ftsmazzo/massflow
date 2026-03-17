@@ -2,7 +2,23 @@
  * Cliente HTTP para a MassFlow API.
  * Em dev: proxy /api -> localhost:8000. Em produção: mesma origem ou VITE_API_URL.
  */
-import axios from 'axios'
+import axios, { type AxiosError } from 'axios'
+
+/** Extrai mensagem de erro da resposta da API (FastAPI: detail string ou array de validação). */
+export function getApiErrorMessage(err: unknown, fallback = 'Ocorreu um erro.'): string {
+  if (!err || typeof err !== 'object' || !('response' in err)) {
+    return 'Não foi possível conectar ao servidor. Em produção, verifique se a URL da API (VITE_API_URL) está correta.'
+  }
+  const response = (err as AxiosError<{ detail?: string | Array<{ msg?: string; loc?: unknown }> }>).response
+  const detail = response?.data?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) {
+    const messages = detail.map((d) => (typeof d === 'object' && d && 'msg' in d ? d.msg : String(d)))
+    return messages.filter(Boolean).join(' ') || fallback
+  }
+  if (response?.status) return `Erro ${response.status}. ${fallback}`
+  return fallback
+}
 
 const baseURL = import.meta.env.VITE_API_URL ?? ''
 
