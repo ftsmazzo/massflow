@@ -6,6 +6,7 @@ import Login from './pages/Login'
 import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Instances from './pages/Instances'
+import Shielding from './pages/Shielding'
 import './App.css'
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
           >
             <Route index element={<Dashboard />} />
             <Route path="instances" element={<Instances />} />
+            <Route path="shielding" element={<Shielding />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

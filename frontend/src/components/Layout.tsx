@@ -19,6 +19,7 @@ export default function Layout() {
           <nav className="app-nav">
             <NavLink to="/app" end>Início</NavLink>
             <NavLink to="/app/instances">Instâncias</NavLink>
+            <NavLink to="/app/shielding">Blindagem</NavLink>
           </nav>
           <div className="app-user">
             <span className="app-tenant">{tenant?.name ?? '—'}</span>

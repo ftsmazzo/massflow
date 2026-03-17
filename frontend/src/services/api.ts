@@ -116,3 +116,21 @@ export const instancesApi = {
   refresh: (id: number) => api.post<Instance>(`/api/instances/${id}/refresh`),
   status: (id: number) => api.get<{ instance: string; connection_state: unknown }>(`/api/instances/${id}/status`),
 }
+
+// --- Shielding (Blindagem global)
+export type ShieldingConfig = {
+  delays: { min_sec: number; max_sec: number }
+  batches: { size_min: number; size_max: number; pause_between_min_sec: number; pause_between_max_sec: number }
+  long_pause: { after_messages: number; duration_min_sec: number; duration_max_sec: number }
+  limits: { max_per_hour: number; max_per_day: number; new_account_max_per_day: number; new_account_days: number }
+  warmup: { enabled: boolean; days: number; max_per_day: number }
+  rotation: { enabled: boolean; switch_after_messages: number }
+  risk: { pause_on_403: boolean; pause_on_429: boolean; max_consecutive_errors: number; pause_duration_sec: number }
+  content: { max_repetition_alert_pct: number; require_personalization: boolean; opt_out_keywords: string[] }
+  schedule: { start_hour: number; end_hour: number; timezone: string }
+}
+
+export const shieldingApi = {
+  get: () => api.get<ShieldingConfig>('/api/settings/shielding'),
+  put: (data: ShieldingConfig) => api.put<ShieldingConfig>('/api/settings/shielding', data),
+}

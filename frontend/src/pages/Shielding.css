@@ -1,0 +1,153 @@
+.shielding-page {
+  padding: 1.5rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.shielding-header {
+  margin-bottom: 1.5rem;
+}
+
+.shielding-header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1a1d29;
+}
+
+.shielding-subtitle {
+  margin: 0.35rem 0 0;
+  font-size: 0.9rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.shielding-loading {
+  padding: 2rem;
+  color: #64748b;
+}
+
+.shielding-error {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #b91c1c;
+  font-size: 0.9rem;
+}
+
+.shielding-saved {
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  color: #166534;
+  font-size: 0.9rem;
+}
+
+.shielding-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.shielding-section {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.25rem;
+}
+
+.shielding-section h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #1a1d29;
+}
+
+.shielding-hint {
+  margin: 0 0 1rem;
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.shielding-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+}
+
+.shielding-section label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #374151;
+  min-width: 120px;
+}
+
+.shielding-section label.shielding-full {
+  min-width: 100%;
+}
+
+.shielding-section input[type="number"],
+.shielding-section input[type="text"],
+.shielding-section textarea {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  width: 100%;
+  max-width: 140px;
+}
+
+.shielding-section label.shielding-full input,
+.shielding-section label.shielding-full textarea {
+  max-width: 100%;
+}
+
+.shielding-section textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.shielding-check {
+  flex-direction: row !important;
+  align-items: center;
+  min-width: auto;
+}
+
+.shielding-check input {
+  width: auto;
+  max-width: none;
+  margin-right: 0.5rem;
+}
+
+.shielding-actions {
+  margin-top: 0.5rem;
+}
+
+.shielding-btn-save {
+  padding: 0.6rem 1.25rem;
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.shielding-btn-save:hover:not(:disabled) {
+  background: #4338ca;
+}
+
+.shielding-btn-save:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}

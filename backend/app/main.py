@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, tenants, instances
+from app.routers import auth, tenants, instances, shielding
 
 
 def _origin_allowed(origin: str) -> bool:
@@ -133,3 +133,4 @@ async def api_status():
 app.include_router(auth.router, prefix="/api")
 app.include_router(tenants.router, prefix="/api")
 app.include_router(instances.router, prefix="/api")
+app.include_router(shielding.router, prefix="/api")
