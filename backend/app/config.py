@@ -26,11 +26,12 @@ class Settings(BaseSettings):
         os.getenv("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "10080")
     )  # 7 dias
 
-    # CORS
+    # CORS (origens exatas e opcional regex para ex.: *.easypanel.host)
     CORS_ORIGINS: str = os.getenv(
         "CORS_ORIGINS",
         "http://localhost:5173,http://localhost:3000"
     )
+    CORS_ORIGIN_REGEX: str = os.getenv("CORS_ORIGIN_REGEX", "")
 
     # Evolution API (base - instâncias por tenant no DB)
     EVOLUTION_API_URL: str = os.getenv("EVOLUTION_API_URL", "http://localhost:8080")
