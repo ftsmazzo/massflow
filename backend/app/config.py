@@ -58,11 +58,12 @@ class Settings(BaseSettings):
 
     @property
     def cors_origin_regex(self) -> str:
-        """Regex para CORS; se vazio, default permite *.easypanel.host."""
+        """Regex para CORS; se vazio, default permite qualquer subdomínio .easypanel.host."""
         s = (self.CORS_ORIGIN_REGEX or "").strip()
         if s:
             return s
-        return r"https://[a-z0-9-]+\.[a-z0-9-]+\.easypanel\.host"
+        # Qualquer subdomínio: https://a.b.easypanel.host (um ou mais segmentos antes de .easypanel.host)
+        return r"https://([a-z0-9-]+\.)+easypanel\.host"
 
     class Config:
         env_file = ".env"

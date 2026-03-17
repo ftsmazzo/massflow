@@ -1,6 +1,7 @@
 """
 MassFlow API - Sistema de disparos em massa (Evolution API)
 """
+import re
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -10,6 +11,33 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.routers import auth, tenants, instances
+
+
+def _origin_allowed(origin: str) -> bool:
+    if not origin:
+        return False
+    if origin in settings.cors_origins_list:
+        return True
+    try:
+        return bool(re.fullmatch(settings.cors_origin_regex, origin))
+    except re.error:
+        return False
+
+
+class InjectCorsHeadersMiddleware(BaseHTTPMiddleware):
+    """Garante Access-Control-Allow-Origin em todas as respostas quando Origin é permitido."""
+
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        origin = request.headers.get("origin", "").strip()
+        if not _origin_allowed(origin):
+            return response
+        if hasattr(response, "body") and response.body is not None:
+            headers = dict(response.headers)
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
+            return Response(content=response.body, status_code=response.status_code, headers=headers)
+        return response
 
 
 class OptionsCORSMiddleware(BaseHTTPMiddleware):
@@ -39,7 +67,10 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# OPTIONS primeiro (preflight sempre 200); depois CORS nas demais respostas
+# Ordem: o primeiro add_middleware é o último a processar a request (primeiro a ver a response).
+# InjectCorsHeaders: injeta CORS em toda resposta quando Origin é permitido.
+app.add_middleware(InjectCorsHeadersMiddleware)
+# OPTIONS (preflight) sempre 200.
 app.add_middleware(OptionsCORSMiddleware)
 
 # CORS: lista exata + opcional regex (ex.: CORS_ORIGIN_REGEX=https://.*\.easypanel\.host)
