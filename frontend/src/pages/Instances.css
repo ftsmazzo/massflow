@@ -1,21 +1,32 @@
-.instances-page h1 {
-  margin: 0 0 1rem;
-  font-size: 1.5rem;
-  color: #1a1d29;
+/* --- Page --- */
+.instances-page {
+  padding: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
 }
 
 .instances-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
+  gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
 .instances-header h1 {
   margin: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #1a1d29;
 }
 
-.btn-primary {
+.instances-subtitle {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  color: #64748b;
+}
+
+.instances-btn-primary {
   padding: 0.5rem 1rem;
   background: #4f46e5;
   color: #fff;
@@ -23,24 +34,21 @@
   border-radius: 8px;
   font-weight: 500;
   cursor: pointer;
+  white-space: nowrap;
 }
 
-.btn-primary:hover {
+.instances-btn-primary:hover {
   background: #4338ca;
 }
 
-.btn-secondary {
-  padding: 0.4rem 0.75rem;
-  background: #fff;
-  color: #4f46e5;
-  border: 1px solid #4f46e5;
-  border-radius: 6px;
+.instances-error-banner {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  color: #b91c1c;
   font-size: 0.9rem;
-  cursor: pointer;
-}
-
-.btn-secondary:hover {
-  background: #eef2ff;
 }
 
 .instances-loading,
@@ -53,58 +61,7 @@
   color: #b91c1c;
 }
 
-.instances-empty {
-  background: #fff;
-  border-radius: 12px;
-  padding: 2rem;
-  text-align: center;
-  border: 1px dashed #cbd5e1;
-}
-
-.instances-empty p {
-  margin: 0 0 0.5rem;
-  color: #64748b;
-}
-
-.instances-empty .btn-primary {
-  margin-top: 1rem;
-}
-
-.instances-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.instances-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  background: #fff;
-  border-radius: 10px;
-  padding: 1rem 1.25rem;
-  border: 1px solid #e2e8f0;
-}
-
-.instances-item-main {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.instances-item-name {
-  font-weight: 600;
-  color: #1a1d29;
-}
-
-.instances-item-meta {
-  font-size: 0.85rem;
-  color: #64748b;
-}
-
+/* --- Connect box (QR / pairing) --- */
 .instances-connect-box {
   background: #eef2ff;
   border: 1px solid #c7d2fe;
@@ -131,6 +88,143 @@
   margin: 0.5rem 0 0;
 }
 
+.instances-btn-secondary {
+  margin-top: 0.75rem;
+  padding: 0.4rem 0.75rem;
+  background: #fff;
+  color: #4f46e5;
+  border: 1px solid #4f46e5;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.instances-btn-secondary:hover {
+  background: #eef2ff;
+}
+
+/* --- Grid de cards --- */
+.instances-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+}
+
+.instances-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.instances-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.instances-card-title {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: #1a1d29;
+}
+
+.instances-card-subtitle {
+  margin: 0.2rem 0 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.instances-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.instances-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #94a3b8;
+}
+
+.instances-status--connected .instances-status-dot {
+  background: #22c55e;
+}
+
+.instances-status--connected {
+  color: #16a34a;
+  font-weight: 500;
+}
+
+.instances-card-phone {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.instances-card-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.instances-card-phone-value {
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+  color: #1a1d29;
+}
+
+.instances-card-actions {
+  margin-top: auto;
+  padding-top: 0.25rem;
+}
+
+.instances-btn-qr {
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: #4f46e5;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 500;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.instances-btn-qr:hover {
+  background: #4338ca;
+}
+
+/* --- Empty state --- */
+.instances-empty {
+  background: #fff;
+  border-radius: 12px;
+  padding: 2rem;
+  text-align: center;
+  border: 1px dashed #cbd5e1;
+}
+
+.instances-empty p {
+  margin: 0 0 0.5rem;
+  color: #64748b;
+}
+
+.instances-empty .instances-btn-primary {
+  margin-top: 1rem;
+}
+
+/* --- Modal --- */
 .instances-modal {
   position: fixed;
   inset: 0;
@@ -175,6 +269,12 @@
   padding: 0.5rem 0.75rem;
   border: 1px solid #ccc;
   border-radius: 6px;
+}
+
+.instances-form-error {
+  padding: 0.5rem 0;
+  color: #b91c1c;
+  font-size: 0.9rem;
 }
 
 .instances-form-actions {

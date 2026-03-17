@@ -27,6 +27,7 @@ class InstanceResponse(BaseModel):
     display_name: str | None
     owner: str
     status: str
+    phone_number: str | None = None
     limits: dict
     created_at: Any
 

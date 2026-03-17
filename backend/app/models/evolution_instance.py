@@ -29,8 +29,11 @@ class EvolutionInstance(Base):
     # owner: "tenant" = instância do cliente; "platform" = instância da plataforma
     owner = Column(String(20), nullable=False, default="tenant")
 
-    # Status local (espelhado da Evolution): created, connecting, open, close, etc.
+    # Status local (espelhado da Evolution): created, connecting, open, close, connected, etc.
     status = Column(String(50), default="created")
+
+    # Número do WhatsApp vinculado (quando conectado)
+    phone_number = Column(String(30), nullable=True)
 
     # Limites opcionais (mensagens/hora, etc.) - JSON
     limits = Column(JSONB, default=dict)

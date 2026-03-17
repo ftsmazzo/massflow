@@ -99,6 +99,7 @@ export type Instance = {
   display_name: string | null
   owner: string
   status: string
+  phone_number: string | null
   limits: Record<string, unknown>
   created_at: string
 }
