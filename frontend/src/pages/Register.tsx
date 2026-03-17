@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { getApiErrorMessage, apiBaseURL } from '../services/api'
+import { getApiErrorMessage } from '../services/api'
 import './Auth.css'
 
 export default function Register() {
@@ -34,11 +34,6 @@ export default function Register() {
         <h1>MassFlow</h1>
         <p className="auth-subtitle">Criar conta</p>
         <form onSubmit={handleSubmit} className="auth-form">
-          {!apiBaseURL && import.meta.env.PROD && (
-            <div className="auth-error">
-              URL da API não configurada. No Easypanel, no serviço do frontend, defina <strong>Build Arg</strong> <code>VITE_API_URL</code> = URL do backend (ex: https://...-backend....easypanel.host) e refaça o build.
-            </div>
-          )}
           {error && <div className="auth-error">{error}</div>}
           <label>
             Nome da organização *

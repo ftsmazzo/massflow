@@ -1,6 +1,7 @@
 # MassFlow Frontend - React/Vite
 # Build context: RAIZ do repositório (Easypanel e docker-compose).
-# No Easypanel: defina Build Arg VITE_API_URL com a URL do backend (ex: https://...-backend....easypanel.host)
+# Produção: NÃO defina VITE_API_URL no build; no container defina BACKEND_URL (ex: http://massflow-backend:8000).
+# O nginx faz proxy de /api para o backend = mesma origem = sem CORS.
 FROM node:20-alpine AS build
 WORKDIR /app
 
@@ -15,6 +16,8 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
-COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf.template /etc/nginx/conf.d/default.conf.template
+COPY frontend/entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+ENTRYPOINT ["/entrypoint.sh"]

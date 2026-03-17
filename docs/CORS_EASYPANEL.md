@@ -1,34 +1,27 @@
-# CORS no Easypanel (MassFlow)
+# Frontend + Backend no Easypanel (MassFlow) – sem CORS
 
-## Backend – variável CORS_ORIGINS
+## Estratégia: proxy no frontend
 
-Use **só a URL do frontend** (uma origem), igual à que aparece no navegador.
+O frontend usa **proxy no nginx**: o navegador chama `/api/...` no próprio domínio do front; o nginx repassa para o backend. **Não há requisição cross-origin**, então **não há CORS**.
 
-| Onde | Variável | Valor (exemplo) |
-|------|----------|------------------|
-| **Backend** | `CORS_ORIGINS` | `https://fabricaia-massflow-frontend.iei9vc.easypanel.host` |
+### Configuração no Easypanel
 
-### Formato correto
+**1. Frontend (massflow-frontend)**
 
-- Uma única URL.
-- Sem barra no final.
-- Sem `https://` duplicado (erro comum: `https://https://...`).
-- Sem espaços antes/depois.
+- **Build:** não defina `VITE_API_URL` (deixe em branco).
+- **Variáveis de ambiente do container (runtime):**
+  - **BACKEND_URL** = `http://NOME_DO_SERVICO_BACKEND:8000`  
+    Exemplo: `http://fabricaia-massflow-backend:8000`  
+    (use o nome interno do serviço do backend no Easypanel e a porta 8000).
 
-### No Easypanel
+**2. Backend**
 
-1. Serviço **massflow-backend** → Variáveis de ambiente.
-2. Defina **CORS_ORIGINS** = `https://fabricaia-massflow-frontend.iei9vc.easypanel.host`  
-   (troque pelo domínio real do seu frontend, se for outro).
-3. **CORS_ORIGIN_REGEX** pode ficar vazio ou ser removido.
-4. Salve e faça redeploy do backend.
+- Porta **8000** (já é o padrão).
+- CORS deixa de ser necessário para o front; pode manter `CORS_ORIGINS` se quiser usar a API de outro domínio (ex.: Swagger).
 
-### Se tiver mais de um frontend
+### Fluxo
 
-Separe por vírgula, sem espaços:
-
-```env
-CORS_ORIGINS=https://front1.easypanel.host,https://front2.easypanel.host
-```
-
-Em geral em produção usa-se **só um** (a URL do frontend do MassFlow).
+1. Usuário acessa `https://fabricaia-massflow-frontend.iei9vc.easypanel.host`
+2. O front chama `POST /api/auth/register` (mesma origem).
+3. O nginx do front recebe e faz proxy para `http://fabricaia-massflow-backend:8000/api/auth/register`.
+4. O backend responde; o nginx devolve a resposta ao navegador. Sem CORS.
