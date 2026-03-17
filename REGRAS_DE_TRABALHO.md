@@ -20,6 +20,13 @@ Regras definidas para o desenvolvimento e implantação do projeto.
 - **Arquivo `.env.example`** é commitado: lista as variáveis com valores de exemplo/placeholders, sem segredos reais.
 - Em outra VPS ou ambiente: basta **alterar as variáveis** no Easypanel (ou no `.env` local e refazer o deploy); nenhuma configuração manual de banco ou shell é necessária.
 
+### CORS no backend (Easypanel)
+
+- **CORS_ORIGINS**: use **uma única URL** = a URL do frontend tal qual o usuário acessa no navegador.
+  - Exemplo: `https://fabricaia-massflow-frontend.iei9vc.easypanel.host`
+  - **Sem** barra no final, **sem** `https://` duplicado.
+- Não é obrigatório preencher **CORS_ORIGIN_REGEX**; se quiser, pode deixar vazio (o backend usa um padrão para `*.easypanel.host`).
+
 ---
 
 ## 3. Banco de dados e implantação
