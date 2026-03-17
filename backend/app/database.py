@@ -6,8 +6,13 @@ from sqlalchemy.orm import sessionmaker, declarative_base
 
 from app.config import settings
 
+# SQLAlchemy exige postgresql:// (não postgres://)
+database_url = settings.DATABASE_URL
+if database_url.startswith("postgres://"):
+    database_url = "postgresql://" + database_url[9:]
+
 engine = create_engine(
-    settings.DATABASE_URL,
+    database_url,
     pool_pre_ping=True,
     pool_size=5,
     max_overflow=10,
