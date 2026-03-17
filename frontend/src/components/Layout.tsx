@@ -18,6 +18,9 @@ export default function Layout() {
           <NavLink to="/app" className="app-logo">MassFlow</NavLink>
           <nav className="app-nav">
             <NavLink to="/app" end>Início</NavLink>
+            <NavLink to="/app/contacts">Contatos</NavLink>
+            <NavLink to="/app/lists">Listas</NavLink>
+            <NavLink to="/app/tags">Tags</NavLink>
             <NavLink to="/app/instances">Instâncias</NavLink>
             <NavLink to="/app/shielding">Blindagem</NavLink>
           </nav>

@@ -7,6 +7,9 @@ import Register from './pages/Register'
 import Dashboard from './pages/Dashboard'
 import Instances from './pages/Instances'
 import Shielding from './pages/Shielding'
+import Contacts from './pages/Contacts'
+import Lists, { ListDetail } from './pages/Lists'
+import Tags from './pages/Tags'
 import './App.css'
 
 function App() {
@@ -28,6 +31,10 @@ function App() {
             <Route index element={<Dashboard />} />
             <Route path="instances" element={<Instances />} />
             <Route path="shielding" element={<Shielding />} />
+            <Route path="contacts" element={<Contacts />} />
+            <Route path="lists" element={<Lists />} />
+            <Route path="lists/:id" element={<ListDetail />} />
+            <Route path="tags" element={<Tags />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

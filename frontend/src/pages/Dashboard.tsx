@@ -14,6 +14,18 @@ export default function Dashboard() {
           <h2>Instâncias</h2>
           <p>Conecte suas instâncias Evolution API (WhatsApp)</p>
         </Link>
+        <Link to="/app/contacts" className="dashboard-card">
+          <h2>Contatos</h2>
+          <p>Base de contatos, listas e tags</p>
+        </Link>
+        <Link to="/app/lists" className="dashboard-card">
+          <h2>Listas</h2>
+          <p>Agrupe contatos para campanhas</p>
+        </Link>
+        <Link to="/app/tags" className="dashboard-card">
+          <h2>Tags</h2>
+          <p>Funis e segmentação</p>
+        </Link>
         <Link to="/app/shielding" className="dashboard-card">
           <h2>Blindagem</h2>
           <p>Configurações globais para evitar bloqueios</p>

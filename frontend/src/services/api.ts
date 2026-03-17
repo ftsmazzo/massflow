@@ -134,3 +134,74 @@ export const shieldingApi = {
   get: () => api.get<ShieldingConfig>('/api/settings/shielding'),
   put: (data: ShieldingConfig) => api.put<ShieldingConfig>('/api/settings/shielding', data),
 }
+
+// --- Contacts
+export type Contact = {
+  id: number
+  tenant_id: number
+  phone: string
+  name: string | null
+  email: string | null
+  custom_fields: Record<string, unknown>
+  opt_in: boolean
+  status: string
+  tags: string[]
+  list_ids: number[]
+  created_at: string | null
+  updated_at: string | null
+  last_sent_at: string | null
+  last_response_at: string | null
+}
+
+export const contactsApi = {
+  list: (params?: { list_id?: number; tags?: string; updated_since?: string; status?: string; opt_in?: boolean; limit?: number; offset?: number }) =>
+    api.get<Contact[]>('/api/contacts', { params }),
+  get: (id: number) => api.get<Contact>(`/api/contacts/${id}`),
+  create: (data: { phone: string; name?: string; email?: string; custom_fields?: Record<string, unknown>; opt_in?: boolean }) =>
+    api.post<Contact>('/api/contacts', data),
+  update: (id: number, data: { name?: string; email?: string; custom_fields?: Record<string, unknown>; opt_in?: boolean; status?: string }) =>
+    api.patch<Contact>(`/api/contacts/${id}`, data),
+  delete: (id: number) => api.delete(`/api/contacts/${id}`),
+  sync: (contacts: Array<{ phone: string; name?: string; email?: string; tags?: string[]; list_id?: number; custom_fields?: Record<string, unknown>; opt_in?: boolean }>) =>
+    api.post<{ created: number; updated: number; errors: Array<Record<string, unknown>> }>('/api/contacts/sync', { contacts }),
+}
+
+// --- Lists
+export type ListItem = {
+  id: number
+  tenant_id: number
+  name: string
+  created_at: string | null
+  updated_at: string | null
+  contact_count: number
+}
+
+export const listsApi = {
+  list: () => api.get<ListItem[]>('/api/lists'),
+  get: (id: number) => api.get<ListItem>(`/api/lists/${id}`),
+  getContacts: (id: number) => api.get<Contact[]>(`/api/lists/${id}/contacts`),
+  create: (data: { name: string }) => api.post<ListItem>('/api/lists', data),
+  update: (id: number, data: { name?: string }) => api.patch<ListItem>(`/api/lists/${id}`, data),
+  delete: (id: number) => api.delete(`/api/lists/${id}`),
+  addContacts: (listId: number, contact_ids: number[]) =>
+    api.post<{ added: number; list_id: number }>(`/api/lists/${listId}/contacts`, { contact_ids }),
+  removeContacts: (listId: number, contact_ids: number[]) =>
+    api.delete<{ removed: number; list_id: number }>(`/api/lists/${listId}/contacts`, { data: { contact_ids } }),
+}
+
+// --- Tags
+export type TagItem = {
+  id: number
+  tenant_id: number
+  name: string
+  created_at: string | null
+}
+
+export const tagsApi = {
+  list: () => api.get<TagItem[]>('/api/tags'),
+  create: (data: { name: string }) => api.post<TagItem>('/api/tags', data),
+  update: (id: number, data: { name: string }) => api.patch<TagItem>(`/api/tags/${id}`, data),
+  delete: (id: number) => api.delete(`/api/tags/${id}`),
+  apply: (tagId: number, contact_ids: number[]) =>
+    api.post<{ applied: number; tag_id: number }>(`/api/tags/${tagId}/apply`, { contact_ids }),
+}
