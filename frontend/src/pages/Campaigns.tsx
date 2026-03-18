@@ -33,6 +33,7 @@ export default function Campaigns() {
   const [editingCampaign, setEditingCampaign] = useState<CampaignItem | null>(null)
   const [instances, setInstances] = useState<Instance[]>([])
   const [startingId, setStartingId] = useState<number | null>(null)
+  const [pollingId, setPollingId] = useState<number | null>(null)
 
   function load() {
     setLoading(true)
@@ -47,6 +48,22 @@ export default function Campaigns() {
     listsApi.list().then((r) => setLists(r.data)).catch(() => {})
     instancesApi.list().then((r) => setInstances(r.data)).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (pollingId == null) return
+    const timer = setInterval(() => {
+      campaignsApi.list()
+        .then((r) => {
+          const campaign = r.data.find((c) => c.id === pollingId)
+          if (campaign && campaign.status !== 'running') {
+            setCampaigns(r.data)
+            setPollingId(null)
+          }
+        })
+        .catch(() => setPollingId(null))
+    }, 4000)
+    return () => clearInterval(timer)
+  }, [pollingId])
 
   function handleDelete(c: CampaignItem) {
     if (c.status !== 'draft' && c.status !== 'cancelled') return
@@ -64,6 +81,7 @@ export default function Campaigns() {
       .then(() => {
         setStartingId(null)
         load()
+        setPollingId(c.id)
       })
       .catch((err) => {
         setStartingId(null)

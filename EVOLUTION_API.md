@@ -29,6 +29,11 @@ Corpo esperado (JSON):
 
 Header: `apikey` com a chave da API.
 
+## Tamanho de mídia
+
+- **Upload (MassFlow):** até 50 MB (nginx e backend configurados).
+- **WhatsApp / Evolution:** para melhor entrega, imagens menores (ex.: &lt; 5 MB) costumam funcionar melhor. Se o envio falhar, verifique a mensagem de erro em `campaign_messages.error_message` (a resposta da Evolution API é gravada ali).
+
 ## Referência no código
 
 - `backend/app/services/evolution.py` — chamadas à Evolution API; comentário no topo do arquivo indica versão e links da doc.

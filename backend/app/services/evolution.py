@@ -142,11 +142,13 @@ def send_media_sync(
         "media": media_value,
         "fileName": file_name or "file",
     }
-    with httpx.Client(timeout=60.0) as client:
+    with httpx.Client(timeout=90.0) as client:
         r = client.post(
             f"{base}/message/sendMedia/{instance_name}",
             json=body,
             headers=_headers(api_key),
         )
-        r.raise_for_status()
+        if not r.is_success:
+            err_detail = r.text[:500] if r.text else r.reason_phrase
+            raise ValueError(f"Evolution API {r.status_code}: {err_detail}")
         return r.json() if r.content else {}

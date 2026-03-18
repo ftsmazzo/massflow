@@ -200,8 +200,8 @@ async def upload_campaign_media(
             status_code=400,
             detail="O arquivo está vazio. Selecione um arquivo válido e tente novamente.",
         )
-    if len(content_bytes) > 25 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Arquivo maior que 25 MB.")
+    if len(content_bytes) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Arquivo maior que 50 MB.")
     dest_path.write_bytes(content_bytes)
     media_path = f"{rel_dir}/{safe_name}"
     campaign_content = dict(campaign.content or {})
