@@ -251,8 +251,8 @@ export const campaignsApi = {
     form.append('file', file)
     return api.post<{ media_path: string; media_mimetype: string; media_filename: string; campaign: CampaignItem }>(
       `/api/campaigns/${id}/media`,
-      form,
-      { headers: { 'Content-Type': 'multipart/form-data' } }
+      form
+      // Não definir Content-Type: o axios/navegador define multipart/form-data com boundary
     )
   },
 }

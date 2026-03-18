@@ -285,6 +285,15 @@
   margin-bottom: 0.5rem;
 }
 
+.campaigns-form-attached {
+  margin: 0.5rem 0 0;
+  padding: 0.5rem 0.75rem;
+  background: #ecfdf5;
+  color: #065f46;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
 .campaigns-form-actions {
   display: flex;
   gap: 0.75rem;

@@ -306,19 +306,21 @@ function CampaignEditForm({
       setError('Selecione uma lista.')
       return
     }
+    if (contentType !== 'text' && !contentMediaPath) {
+      setError('Anexe um arquivo de mídia (imagem, vídeo, áudio ou documento) antes de salvar.')
+      return
+    }
     setError('')
     setLoading(true)
     const contentPayload: Record<string, string | undefined> = {
       type: contentType,
       text: contentType === 'text' ? contentText : contentCaption || contentText,
+      caption: contentType !== 'text' ? (contentCaption || '') : undefined,
     }
-    if (contentType !== 'text') {
-      if (contentCaption) contentPayload.caption = contentCaption
-      if (contentMediaPath) {
-        contentPayload.media_path = contentMediaPath
-        contentPayload.media_mimetype = contentMediaMimetype
-        contentPayload.media_filename = contentMediaFilename
-      }
+    if (contentType !== 'text' && contentMediaPath) {
+      contentPayload.media_path = contentMediaPath
+      contentPayload.media_mimetype = contentMediaMimetype
+      contentPayload.media_filename = contentMediaFilename
     }
     const payload = {
       name: name.trim(),
@@ -417,15 +419,18 @@ function CampaignEditForm({
                           setContentMediaPath(res.data.media_path)
                           setContentMediaMimetype(res.data.media_mimetype)
                           setContentMediaFilename(res.data.media_filename)
+                          e.target.value = '' // limpa input só após sucesso para permitir trocar arquivo
                         })
                         .catch((err) => setError(getApiErrorMessage(err)))
-                        .finally(() => { setUploadingMedia(false); e.target.value = '' })
+                        .finally(() => setUploadingMedia(false))
                     }}
                   />
                   {contentMediaFilename && (
-                    <span className="campaigns-form-hint">Anexado: {contentMediaFilename}</span>
+                    <p className="campaigns-form-attached" role="status">
+                      ✓ Arquivo anexado: <strong>{contentMediaFilename}</strong> — salve a campanha e depois dispare.
+                    </p>
                   )}
-                  {uploadingMedia && <span className="campaigns-form-hint">Enviando arquivo…</span>}
+                  {uploadingMedia && <p className="campaigns-form-hint">Enviando arquivo…</p>}
                 </label>
                 <label>
                   {contentType === 'image' || contentType === 'video' || contentType === 'document' ? 'Legenda' : 'Texto (antes/depois do áudio)'}
