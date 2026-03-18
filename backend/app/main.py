@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, tenants, instances, shielding, contacts, lists, tags
+from app.routers import auth, tenants, instances, shielding, contacts, lists, tags, campaigns
 
 
 def _origin_allowed(origin: str) -> bool:
@@ -137,3 +137,4 @@ app.include_router(shielding.router, prefix="/api")
 app.include_router(contacts.router, prefix="/api")
 app.include_router(lists.router, prefix="/api")
 app.include_router(tags.router, prefix="/api")
+app.include_router(campaigns.router, prefix="/api")

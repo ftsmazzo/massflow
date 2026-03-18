@@ -205,3 +205,43 @@ export const tagsApi = {
   apply: (tagId: number, contact_ids: number[]) =>
     api.post<{ applied: number; tag_id: number }>(`/api/tags/${tagId}/apply`, { contact_ids }),
 }
+
+// --- Campaigns
+export type CampaignItem = {
+  id: number
+  tenant_id: number
+  name: string
+  type: string
+  list_id: number
+  tag_filter_include: string[] | null
+  tag_filter_exclude: string[] | null
+  content: Record<string, unknown>
+  use_global_shielding: boolean
+  shielding_override: Record<string, unknown> | null
+  instance_ids: number[] | null
+  status: string
+  scheduled_at: string | null
+  started_at: string | null
+  completed_at: string | null
+  created_at: string | null
+  updated_at: string | null
+}
+
+export const campaignsApi = {
+  list: (params?: { status?: string }) => api.get<CampaignItem[]>('/api/campaigns', { params }),
+  get: (id: number) => api.get<CampaignItem>(`/api/campaigns/${id}`),
+  create: (data: {
+    name: string
+    type?: string
+    list_id: number
+    tag_filter_include?: string[] | null
+    tag_filter_exclude?: string[] | null
+    content?: Record<string, unknown>
+    use_global_shielding?: boolean
+    shielding_override?: Record<string, unknown> | null
+    instance_ids?: number[] | null
+    scheduled_at?: string | null
+  }) => api.post<CampaignItem>('/api/campaigns', data),
+  update: (id: number, data: Partial<CampaignItem>) => api.patch<CampaignItem>(`/api/campaigns/${id}`, data),
+  delete: (id: number) => api.delete(`/api/campaigns/${id}`),
+}

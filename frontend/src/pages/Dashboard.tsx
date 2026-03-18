@@ -30,14 +30,10 @@ export default function Dashboard() {
           <h2>Blindagem</h2>
           <p>Configurações globais para evitar bloqueios</p>
         </Link>
-        <div className="dashboard-card disabled">
+        <Link to="/app/campaigns" className="dashboard-card">
           <h2>Campanhas</h2>
-          <p>Em breve</p>
-        </div>
-        <div className="dashboard-card disabled">
-          <h2>Contatos</h2>
-          <p>Em breve</p>
-        </div>
+          <p>Crie e gerencie disparos em massa</p>
+        </Link>
       </div>
     </div>
   )

@@ -20,6 +20,7 @@ export default function Layout() {
             <NavLink to="/app" end>Início</NavLink>
             <NavLink to="/app/contacts">Contatos</NavLink>
             <NavLink to="/app/lists">Listas</NavLink>
+            <NavLink to="/app/campaigns">Campanhas</NavLink>
             <NavLink to="/app/tags">Tags</NavLink>
             <NavLink to="/app/instances">Instâncias</NavLink>
             <NavLink to="/app/shielding">Blindagem</NavLink>

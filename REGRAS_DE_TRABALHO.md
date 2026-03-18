@@ -33,6 +33,7 @@ Regras definidas para o desenvolvimento e implantação do projeto.
 
 - **Tudo relacionado ao banco** (criação de banco, tabelas, migrações, atualizações) ocorre **na implantação no Easypanel**, ao subir o backend.
 - **Nada via shell ou bash** para o banco: o backend, ao iniciar, executa as migrações (ex.: `alembic upgrade head`) ou a criação inicial das tabelas, de forma automática.
+- **Não rodar migrações no terminal** (nem `alembic upgrade head` nem outro comando de banco). As migrações só ocorrem via deploy: o entrypoint do container no Easypanel aplica as migrações antes de subir a API.
 - Assim, ao fazer deploy em outra VPS, basta configurar a nova `DATABASE_URL` (e demais variáveis); o container ao subir aplica o schema necessário.
 
 ---
@@ -54,5 +55,5 @@ Regras definidas para o desenvolvimento e implantação do projeto.
 | Banco | PostgreSQL no projeto; URL interna via variável de ambiente |
 | .env | Só local; variáveis reais organizadas; não commitado |
 | .env.example | Commitado; placeholders; referência |
-| Banco / migrações | Tudo na implantação (backend sobe e aplica); nada manual em shell |
+| Banco / migrações | Só na implantação (Easypanel). Backend sobe e aplica; **nunca** rodar alembic/banco no terminal |
 | Código | Após editar/criar → commit + push → deploy no Easypanel |

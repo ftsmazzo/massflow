@@ -77,7 +77,9 @@ Acesse http://localhost:5173 (proxy para API em :8000).
 
 ## Regras de trabalho
 
-Ver **REGRAS_DE_TRABALHO.md** (repositório, Easypanel, .env local, banco na implantação, commit + push).
+Ver **REGRAS_DE_TRABALHO.md** (repositório, Easypanel, .env local, commit + push).
+
+**Migrações de banco:** ocorrem **apenas na implantação** no Easypanel (o entrypoint do backend aplica as migrações ao subir o container). Não usar comandos de terminal para migrações (nem `alembic upgrade head` nem outro).
 
 ## Licença
 
