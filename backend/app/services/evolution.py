@@ -98,6 +98,16 @@ def send_text_sync(
         return r.json() if r.content else {}
 
 
+def _normalize_media_base64(media_base64: str) -> str:
+    """Retorna apenas o base64 puro; Evolution API pode rejeitar data:...;base64, com 400."""
+    if not media_base64:
+        return ""
+    s = media_base64.strip()
+    if s.startswith("data:") and ";base64," in s:
+        return s.split(";base64,", 1)[1]
+    return s
+
+
 def send_media_sync(
     api_url: str,
     api_key: str,
@@ -116,7 +126,9 @@ def send_media_sync(
         raise ValueError("Número inválido")
     if not media_base64:
         raise ValueError("Mídia em base64 é obrigatória")
-    media_value = media_base64 if media_base64.startswith("data:") else f"data:{mimetype};base64,{media_base64}"
+    media_value = _normalize_media_base64(media_base64)
+    if not media_value:
+        raise ValueError("Mídia em base64 inválida")
     body = {
         "number": number_clean,
         "mediatype": mediatype,
