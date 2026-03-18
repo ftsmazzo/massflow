@@ -1,50 +1,55 @@
 # Contatos e Leads — Plano e passos
 
-Documento que consolida o que foi projetado, a distinção **contatos físicos** vs **leads em campanhas/funil**, e os passos de implementação (incluindo API para sistemas externos consumirem contatos).
+Documento que consolida o que foi projetado, a **ordem correta do fluxo** (campanha → contatos) e os passos de implementação.
 
 ---
 
-## 1. Conceito: contatos físicos vs leads em campanhas/funil
+## 1. Decisão de produto: contatos entram pela campanha
 
-### 1.1 Contatos físicos (base)
+**Regra central:** contatos não entram no sistema de forma solta (import em massa sem campanha, “conexão de CRM” para trazer base inteira). A entrada é **sempre atrelada a uma ação de marketing**.
 
-- **Um contato físico** = uma pessoa identificada por **telefone** (único por tenant).
-- Dados: telefone (obrigatório), nome, email, campos custom (JSON), opt-in, status (ativo, na_esteira, opt_out).
-- No modelo atual do MassFlow essa entidade é a tabela **`leads`** (Lead). Ou seja: **Lead = contato físico**. Na API e na UI podemos expor como **"Contatos"** para clareza; no banco permanece `leads`.
-- Um mesmo contato (telefone) não se repete por tenant: é criado/atualizado (upsert) por telefone.
+### 1.1 Fluxo correto (campanha-first)
 
-### 1.2 Listas
+1. **Criar campanha** para uma ação (ex.: Black Friday, lançamento).
+2. **Na criação da campanha**, definir os **alvos** do disparo:
+   - **Importação CSV** (upload naquela campanha, contatos entram para uma lista);
+   - Ou escolher uma **lista interna** já existente (leads que vieram de campanhas anteriores, filtrados por tags).
+   - *(Conexão API externa — CRM, etc. — fica fora do escopo por enquanto.)*
+3. **Disparo:** enviamos para esses alvos; para cada um registramos **recebeu / leu / respondeu / chegou ao contato com IA**.
+4. **A cada passo do funil** agregamos **tags** (ex.: `recebeu`, `leu`, `respondeu`, `na-esteira`).
+5. Esses alvos passam a ser **leads/contatos do sistema** (tabela `leads` com tags e histórico). A partir daí:
+   - Montamos **novas listas de disparo** com **filtros por tag** para as próximas campanhas.
+   - Não precisamos “importar contatos” de novo sem campanha: quem entra na base é quem já foi alvo de alguma campanha (ou foi carregado como alvo ao criar uma campanha).
 
-- **Lista** = agrupamento nomeado de contatos (ex.: "Base Black Friday", "Inscritos site").
-- Relação N:N: um **contato** pode estar em **várias listas**; uma **lista** tem **vários contatos** (tabela `list_leads`).
-- Listas são usadas para organizar bases e, depois, para **escolher o público de uma campanha** (campanha “usa” uma lista ou segmento por tags).
+### 1.2 O que NÃO fazemos (evitar no desenvolvimento)
 
-### 1.3 Leads em campanhas / funil
+- **Não:** tela “Importar contatos” ou “Conectar CRM” como ação independente, populando base de contatos sem campanha ativa.
+- **Não:** “conexão de contatos remota” que puxa toda a base do CRM para o MassFlow fora do contexto de uma campanha.
+- **Sim:** “Ao criar campanha → carregar alvos” (por enquanto só **importação CSV** e lista interna por tags; conexão API externa fora do escopo). Os contatos passam a existir no sistema como resultado do uso em campanha e do funil (tags).
 
-- **“Lead” em campanha/funil** = o **mesmo contato físico** (Lead) quando:
-  - está em **listas** usadas por campanhas, e
-  - passa a ter **histórico de disparos** (recebeu campanha X, respondeu, entrou na esteira) e **tags** para funil.
-- **Tags** (por tenant) ficam no **contato** (Lead): ex. `quente`, `interessado`, `na-esteira`, `funil-vendas-2025`. Servem para:
-  - **Segmentação** em campanhas (enviar só para quem tem tag X ou não tem Y).
-  - **Funil:** etapas e relatórios (etapa-1, etapa-2, concluído).
-- Quando existir o modelo **Campaign**, o vínculo “contato recebeu campanha” será registrado em tabela de envios (ex.: `campaign_messages` ou `campaign_recipients`: campaign_id, lead_id, sent_at, status). Não é necessário outra tabela “lead em campanha”: o contato (Lead) + lista + tags + histórico de envios/respostas formam o “lead em campanha/funil”.
+### 1.3 Conceito no sistema (após a decisão acima)
 
-### 1.4 Resumo do modelo atual (sem mudar estrutura)
+- **Lead** = contato físico no MassFlow (telefone único por tenant). Existe na base **porque** foi alvo de alguma campanha (ou foi carregado como alvo ao criar uma) e tem histórico/tags.
+- **Tags** (por tenant) no lead: ex. `recebeu`, `respondeu`, `na-esteira`, `quente`. Servem para **segmentação** nas próximas campanhas (enviar só para quem tem tag X) e para funil.
+- **Listas** = agrupamentos de leads (N:N). Usadas para organizar e para escolher público em **novas** campanhas; listas podem ser construídas por **filtro de tags** sobre os leads já existentes.
+- **Campanha** = ação de disparo com alvos definidos na criação (carregados de API/CSV ou lista interna); tracking (recebeu/leu/respondeu/IA) e aplicação de tags; os alvos viram (ou atualizam) leads no sistema.
 
-| Conceito na conversa      | No sistema MassFlow                         |
-|---------------------------|---------------------------------------------|
-| Contato físico            | **Lead** (tabela `leads`: phone, name, email, opt_in, status, custom_fields) |
-| Contato em listas         | Lead + associação em **List** (tabela `list_leads`) |
-| Lead em campanha / funil  | Mesmo Lead + **tags** + histórico de envios (quando houver Campaign) |
-| Tags para funis           | **Tag** (tabela `tags`) + `lead_tags` (N:N com Lead) |
+### 1.4 Resumo (sem mudar estrutura de banco)
 
-Não é obrigatório criar tabela “Contact” separada: Lead já é o contato físico; listas e tags organizam o uso em campanhas e funis.
+| Conceito                | No MassFlow |
+|-------------------------|-------------|
+| Contato físico / lead  | **Lead** (tabela `leads`). Entra na base via campanha (alvos da campanha). |
+| Listas                  | **List** + `list_leads`. Agrupamentos para próximas campanhas; podem ser por filtro de tags. |
+| Tags                    | **Tag** + `lead_tags`. Agregadas ao longo do funil (recebeu, leu, respondeu, na-esteira). |
+| Campanha                | **Campaign** + tabela de envios. Alvos carregados na criação (API/CSV/lista). |
 
 ---
 
 ## 2. API para sistemas externos (consumir e enviar contatos)
 
-Objetivo: outros sistemas (CRM, site, Agentes SaaS, etc.) **conversarem com o MassFlow** via API para enviar e receber contatos.
+**Contexto (campanha-first):** A API de push (sync) é usada quando o cliente **carrega alvos na criação de uma campanha** a partir de um sistema externo (CRM, etc.). O pull (GET) serve para que sistemas externos consultem os leads que já estão no MassFlow (após campanhas). Não usamos a API para “importar base inteira” sem campanha.
+
+Objetivo: outros sistemas (CRM, site, Agentes SaaS, etc.) **conversarem com o MassFlow** via API para enviar e receber contatos **no contexto de campanhas e listas derivadas**.
 
 ### 2.1 Enviar contatos para o MassFlow (push)
 
@@ -107,8 +112,9 @@ Objetivo: outros sistemas (CRM, site, Agentes SaaS, etc.) **conversarem com o Ma
 
 ## 4. Ordem prática para “lidar com os contatos” agora
 
-1. **Backend:** routers de **contacts** (CRUD + GET com filtros para pull) e **lists** (CRUD + add/remove contacts) e **tags** (CRUD + aplicar em contatos); em seguida **POST /api/contacts/sync** para push.
-2. **Frontend:** página **Contatos** (listar, criar, editar, filtros por lista/tag); página **Listas** (CRUD, ver contatos da lista, adicionar/remover); **Tags** (CRUD, aplicar em massa na tela de contatos); **Import CSV** (mapeamento + import).
-3. **Documentação:** exemplo de uso da API (GET /api/contacts e POST /api/contacts/sync) para sistemas externos consumirem e enviarem contatos.
+1. **Campanhas primeiro:** Ao criar campanha, o usuário define os **alvos** (carregar de API externa, CSV ou lista interna por tags). Não há “importar contatos” ou “conectar CRM” como tela independente.
+2. **Backend:** routers **contacts**, **lists**, **tags**; **POST /api/contacts/sync** usado quando a campanha carrega alvos de sistema externo ou CSV; GET /contacts para pull por sistemas externos e para listas/filtros internos.
+3. **Frontend:** **Contatos** = listar/editar os leads que já existem no sistema (oriundos de campanhas). **Listas** = agrupamentos para próximas campanhas (filtro por tags). **Tags** = gestão e aplicação em massa. **Import CSV** = no contexto de **criação/edição de campanha** (upload de alvos daquela campanha), não como ação solta.
+4. **Documentação:** API (GET/POST contacts) para sistemas externos, sempre no contexto “alvos de campanha” e “listas derivadas de leads com tags”.
 
-Com isso, os contatos ficam bem definidos (contatos físicos = Lead; listas e tags para funis e campanhas), e a API permite que seus outros sistemas conversem com o MassFlow para consumir e enviar contatos. Depois entram campanhas e disparo usando essas listas e tags.
+Com isso, o desenvolvimento evita desvio para “base de contatos solta”; contatos entram pela campanha e, com tags, viram base para novas listas e campanhas.

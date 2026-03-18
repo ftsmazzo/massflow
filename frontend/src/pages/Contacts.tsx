@@ -266,6 +266,8 @@ function ImportCsvModal({
   const [error, setError] = useState('')
   const [result, setResult] = useState<{ created: number; updated: number; errors: unknown[] } | null>(null)
 
+  const listRequired = lists.length > 0
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     setFile(f || null)
@@ -298,6 +300,10 @@ function ImportCsvModal({
 
   function handleImport() {
     if (!file) return
+    if (listRequired && !listId) {
+      setError('Selecione uma lista para importar os contatos (público da campanha).')
+      return
+    }
     setError('')
     setLoading(true)
     setResult(null)
@@ -354,19 +360,28 @@ function ImportCsvModal({
       <div className="contacts-modal-backdrop" onClick={onClose} />
       <div className="contacts-modal-content contacts-import-modal">
         <h2>Importar CSV</h2>
-        <p className="contacts-import-hint">Cabeçalho deve ter coluna "phone", "telefone" ou "celular". Opcional: "nome", "email".</p>
+        <p className="contacts-import-hint">Contatos entram para uma lista (público da campanha). Cabeçalho do CSV: "phone", "telefone" ou "celular"; opcional: "nome", "email".</p>
+        {lists.length === 0 ? (
+          <>
+            <div className="contacts-form-error">Crie uma lista em Listas antes de importar contatos.</div>
+            <div className="contacts-form-actions">
+              <button type="button" onClick={onClose}>Fechar</button>
+            </div>
+          </>
+        ) : (
+          <>
         <label>
-          Arquivo CSV
-          <input type="file" accept=".csv,.txt" onChange={handleFileChange} />
-        </label>
-        <label>
-          Adicionar à lista
-          <select value={listId === '' ? '' : listId} onChange={(e) => setListId(e.target.value === '' ? '' : Number(e.target.value))}>
-            <option value="">Nenhuma</option>
+          Lista (obrigatório)
+          <select value={listId === '' ? '' : listId} onChange={(e) => setListId(e.target.value === '' ? '' : Number(e.target.value))} required>
+            <option value="">Selecione uma lista</option>
             {lists.map((l) => (
               <option key={l.id} value={l.id}>{l.name}</option>
             ))}
           </select>
+        </label>
+        <label>
+          Arquivo CSV
+          <input type="file" accept=".csv,.txt" onChange={handleFileChange} />
         </label>
         <label>
           Tags (vírgula)
@@ -385,6 +400,8 @@ function ImportCsvModal({
             {loading ? 'Importando…' : 'Importar'}
           </button>
         </div>
+          </>
+        )}
       </div>
     </div>
   )
