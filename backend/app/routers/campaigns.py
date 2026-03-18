@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -135,18 +135,30 @@ def update_campaign(
 
 
 @router.post("/{campaign_id}/media")
-def upload_campaign_media(
+async def upload_campaign_media(
     campaign_id: int,
+    request: Request,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-    file: UploadFile | None = File(None),
 ):
     """Anexa arquivo de mídia à campanha (imagem, vídeo, áudio, documento). Arquivo é salvo no servidor, não link."""
-    if not file or not (getattr(file, "filename", None) or "").strip():
+    try:
+        form = await request.form()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Requisição inválida. Envie o arquivo como multipart/form-data com o campo 'file'.",
+        )
+    file = form.get("file")
+    if not file or not hasattr(file, "read"):
         raise HTTPException(
             status_code=400,
             detail="Nenhum arquivo enviado. Selecione um arquivo (imagem, vídeo, áudio ou documento) e tente novamente.",
         )
+    if hasattr(file, "filename"):
+        filename = (file.filename or "").strip() or "arquivo"
+    else:
+        filename = "arquivo"
     tenant_id = user.tenant_id
     campaign = db.query(Campaign).filter(
         Campaign.id == campaign_id,
@@ -156,14 +168,14 @@ def upload_campaign_media(
         raise HTTPException(status_code=404, detail="Campanha não encontrada.")
     if campaign.status != "draft":
         raise HTTPException(status_code=400, detail="Só é possível anexar mídia em campanha em rascunho.")
-    ct = (file.content_type or "").split(";")[0].strip().lower()
-    if ct not in ALLOWED_MEDIA:
+    content_type = (getattr(file, "content_type", None) or "").split(";")[0].strip().lower()
+    if not content_type or content_type not in ALLOWED_MEDIA:
         raise HTTPException(
             status_code=400,
-            detail=f"Tipo de arquivo não permitido. Use: imagem (jpeg, png, gif, webp), vídeo (mp4, 3gp), áudio (ogg, mp3, m4a) ou documento (pdf, doc, docx).",
+            detail="Tipo de arquivo não permitido. Use: imagem (jpeg, png, gif, webp), vídeo (mp4, 3gp), áudio (ogg, mp3, m4a) ou documento (pdf, doc, docx).",
         )
-    ext = EXT_FROM_MIME.get(ct, ".bin")
-    safe_name = re.sub(r"[^\w\-.]", "_", file.filename or "file")[:80]
+    ext = EXT_FROM_MIME.get(content_type, ".bin")
+    safe_name = re.sub(r"[^\w\-.]", "_", filename)[:80]
     if not safe_name.endswith(ext):
         safe_name = (safe_name or "file") + ext
     rel_dir = f"campaigns/{campaign_id}"
@@ -171,23 +183,37 @@ def upload_campaign_media(
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / safe_name
     try:
-        content_bytes = file.file.read()
-        if len(content_bytes) > 25 * 1024 * 1024:
-            raise HTTPException(status_code=400, detail="Arquivo maior que 25 MB.")
-        dest_path.write_bytes(content_bytes)
-    finally:
-        file.file.close()
+        if hasattr(file, "read"):
+            read_fn = file.read
+            content_bytes = await read_fn() if asyncio.iscoroutinefunction(read_fn) else read_fn()
+        else:
+            content_bytes = file.file.read()
+    except Exception:
+        content_bytes = b""
+    if hasattr(file, "close") and callable(file.close):
+        try:
+            file.close()
+        except Exception:
+            pass
+    if not content_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail="O arquivo está vazio. Selecione um arquivo válido e tente novamente.",
+        )
+    if len(content_bytes) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Arquivo maior que 25 MB.")
+    dest_path.write_bytes(content_bytes)
     media_path = f"{rel_dir}/{safe_name}"
     campaign_content = dict(campaign.content or {})
     campaign_content["media_path"] = media_path
-    campaign_content["media_mimetype"] = ct
+    campaign_content["media_mimetype"] = content_type
     campaign_content["media_filename"] = safe_name
     campaign.content = campaign_content
     db.commit()
     db.refresh(campaign)
     return {
         "media_path": media_path,
-        "media_mimetype": ct,
+        "media_mimetype": content_type,
         "media_filename": safe_name,
         "campaign": campaign,
     }
