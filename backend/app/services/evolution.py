@@ -1,13 +1,18 @@
 """
-Integração com Evolution API: criar instância, conectar (QR), status.
+Integração com Evolution API (versão mínima: 2.3.7).
+
+Documentação oficial: https://doc.evolution-api.com/
+- Send Media: https://doc.evolution-api.com/v2/api-reference/message-controller/send-media
+- Índice v2: https://doc.evolution-api.com/llms.txt
+
+Endpoints usados:
+- POST /instance/create, GET /instance/connect/{instance}, GET /instance/connectionState/{instance}
+- DELETE /instance/logout/{instance}
+- POST /message/sendText/{instance}
+- POST /message/sendMedia/{instance} — body: number, mediatype, mimetype, caption, media (URL ou base64), fileName
 """
 import httpx
 from typing import Any
-
-# Evolution API v2
-# POST /instance/create - body: instanceName, integration (WHATSAPP-BAILEYS | WHATSAPP-BUSINESS), token?
-# GET /instance/connect/{instance} - retorna pairingCode, code (QR), count
-# GET /instance/connectionState/{instance} - status da conexão (opcional)
 
 
 def _headers(api_key: str) -> dict:

@@ -7,6 +7,7 @@ Sistema de **disparos em massa** via Evolution API — captação de leads, camp
 - **MassFlow_ESPECIFICACAO_FINAL.md** — Requisitos completos (tags, IA, contatos, SaaS 3 níveis, créditos, Agentes SaaS).
 - **MassFlow_VISAO_E_IDEACAO.md** — Visão e pilares do produto.
 - **MassFlow_DOCUMENTO_IMPLANTACAO.md** — Passos de implantação (fases 0–9) e tecnologias.
+- **EVOLUTION_API.md** — Versão mínima da Evolution API (2.3.7) e links da documentação oficial usada na integração.
 
 ## Estrutura
 
