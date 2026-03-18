@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { campaignsApi, listsApi, instancesApi, type CampaignItem, type ListItem, type Instance } from '../services/api'
 import { getApiErrorMessage } from '../services/api'
 import './Campaigns.css'
@@ -288,6 +288,7 @@ function CampaignEditForm({
   const [loading, setLoading] = useState(false)
   const [uploadingMedia, setUploadingMedia] = useState(false)
   const [error, setError] = useState('')
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   function toggleInstance(id: number) {
     setInstanceIds((prev) => {
@@ -300,27 +301,16 @@ function CampaignEditForm({
     })
   }
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    if (!listId) {
-      setError('Selecione uma lista.')
-      return
-    }
-    if (contentType !== 'text' && !contentMediaPath) {
-      setError('Anexe um arquivo de mídia (imagem, vídeo, áudio ou documento) antes de salvar.')
-      return
-    }
-    setError('')
-    setLoading(true)
+  function doSave(mediaPath: string, mediaMimetype: string, mediaFilename: string) {
     const contentPayload: Record<string, string | undefined> = {
       type: contentType,
       text: contentType === 'text' ? contentText : contentCaption || contentText,
       caption: contentType !== 'text' ? (contentCaption || '') : undefined,
     }
-    if (contentType !== 'text' && contentMediaPath) {
-      contentPayload.media_path = contentMediaPath
-      contentPayload.media_mimetype = contentMediaMimetype
-      contentPayload.media_filename = contentMediaFilename
+    if (contentType !== 'text' && mediaPath) {
+      contentPayload.media_path = mediaPath
+      contentPayload.media_mimetype = mediaMimetype
+      contentPayload.media_filename = mediaFilename
     }
     const payload = {
       name: name.trim(),
@@ -331,7 +321,37 @@ function CampaignEditForm({
       use_global_shielding: useGlobalShielding,
       instance_ids: instanceIds.length > 0 ? instanceIds : null,
     }
-    campaignsApi.update(campaign.id, payload)
+    return campaignsApi.update(campaign.id, payload)
+  }
+
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!listId) {
+      setError('Selecione uma lista.')
+      return
+    }
+    setError('')
+    setLoading(true)
+
+    const fileFromInput = fileInputRef.current?.files?.[0]
+    const hasMediaInState = contentType !== 'text' && contentMediaPath
+
+    if (contentType !== 'text' && !hasMediaInState && fileFromInput) {
+      campaignsApi.uploadMedia(campaign.id, fileFromInput)
+        .then((res) => doSave(res.data.media_path, res.data.media_mimetype, res.data.media_filename))
+        .then(onSuccess)
+        .catch((err) => setError(getApiErrorMessage(err)))
+        .finally(() => setLoading(false))
+      return
+    }
+
+    if (contentType !== 'text' && !hasMediaInState && !fileFromInput) {
+      setError('Anexe um arquivo de mídia (imagem, vídeo, áudio ou documento) antes de salvar.')
+      setLoading(false)
+      return
+    }
+
+    doSave(contentMediaPath, contentMediaMimetype, contentMediaFilename)
       .then(onSuccess)
       .catch((err) => setError(getApiErrorMessage(err)))
       .finally(() => setLoading(false))
@@ -407,6 +427,7 @@ function CampaignEditForm({
                 <label>
                   Anexar arquivo (imagem, vídeo, áudio ou documento) — o arquivo é enviado e anexado ao disparo, não link
                   <input
+                    ref={fileInputRef}
                     type="file"
                     accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
                     onChange={(e) => {
