@@ -302,26 +302,28 @@ function CampaignEditForm({
   }
 
   function doSave(mediaPath: string, mediaMimetype: string, mediaFilename: string) {
-    const contentPayload: Record<string, string | undefined> = {
+    const contentPayload: Record<string, string> = {
       type: contentType,
-      text: contentType === 'text' ? contentText : contentCaption || contentText,
-      caption: contentType !== 'text' ? (contentCaption || '') : undefined,
+      text: contentType === 'text' ? contentText : (contentCaption || contentText || ''),
+      ...(contentType !== 'text' && { caption: contentCaption || '' }),
     }
     if (contentType !== 'text' && mediaPath) {
       contentPayload.media_path = mediaPath
       contentPayload.media_mimetype = mediaMimetype
       contentPayload.media_filename = mediaFilename
     }
-    const payload = {
+    const payload: Record<string, unknown> = {
       name: name.trim(),
       type,
       list_id: listId,
-      scheduled_at: scheduledAt || null,
       content: contentPayload,
       use_global_shielding: useGlobalShielding,
-      instance_ids: instanceIds.length > 0 ? instanceIds : null,
     }
-    return campaignsApi.update(campaign.id, payload)
+    if (scheduledAt) payload.scheduled_at = scheduledAt
+    else payload.scheduled_at = null
+    if (instanceIds.length > 0) payload.instance_ids = instanceIds
+    else payload.instance_ids = null
+    return campaignsApi.update(campaign.id, payload as Partial<CampaignItem>)
   }
 
   function handleSubmit(e: React.FormEvent) {

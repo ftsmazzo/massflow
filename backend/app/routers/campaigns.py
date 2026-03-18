@@ -139,9 +139,14 @@ def upload_campaign_media(
     campaign_id: int,
     user: Annotated[User, Depends(get_current_user)],
     db: Annotated[Session, Depends(get_db)],
-    file: Annotated[UploadFile, File()],
+    file: Annotated[UploadFile | None, File()] = File(None),
 ):
     """Anexa arquivo de mídia à campanha (imagem, vídeo, áudio, documento). Arquivo é salvo no servidor, não link."""
+    if not file or not (getattr(file, "filename", None) or "").strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Nenhum arquivo enviado. Selecione um arquivo (imagem, vídeo, áudio ou documento) e tente novamente.",
+        )
     tenant_id = user.tenant_id
     campaign = db.query(Campaign).filter(
         Campaign.id == campaign_id,

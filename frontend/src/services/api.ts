@@ -248,11 +248,10 @@ export const campaignsApi = {
   /** Anexa arquivo de mídia (imagem, vídeo, áudio, documento). Arquivo é enviado e salvo no servidor, não link. */
   uploadMedia: (id: number, file: File) => {
     const form = new FormData()
-    form.append('file', file)
+    form.append('file', file, file.name || 'arquivo')
     return api.post<{ media_path: string; media_mimetype: string; media_filename: string; campaign: CampaignItem }>(
       `/api/campaigns/${id}/media`,
       form
-      // Não definir Content-Type: o axios/navegador define multipart/form-data com boundary
     )
   },
 }
