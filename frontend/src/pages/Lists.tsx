@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { listsApi, contactsApi, type ListItem, type Contact } from '../services/api'
+import { listsApi, contactsApi, tagsApi, type ListItem, type Contact, type TagItem } from '../services/api'
 import { getApiErrorMessage } from '../services/api'
 import ImportCsvModal from '../components/ImportCsvModal'
 import './Lists.css'
@@ -325,17 +325,26 @@ function AddContactsModal({
   onSuccess: () => void
 }) {
   const [contacts, setContacts] = useState<Contact[]>([])
+  const [tags, setTags] = useState<TagItem[]>([])
+  const [filterTag, setFilterTag] = useState('')
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    contactsApi.list({ limit: 500 })
+    tagsApi.list().then((r) => setTags(r.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    setLoading(true)
+    const params: { limit: number; tags?: string } = { limit: 500 }
+    if (filterTag.trim()) params.tags = filterTag.trim()
+    contactsApi.list(params)
       .then((r) => setContacts(r.data.filter((c) => !currentIds.has(c.id))))
       .catch(() => setError('Falha ao carregar contatos.'))
       .finally(() => setLoading(false))
-  }, [listId])
+  }, [listId, filterTag])
 
   function toggle(id: number) {
     setSelectedIds((prev) => {
@@ -360,11 +369,35 @@ function AddContactsModal({
       <div className="lists-modal-backdrop" onClick={onClose} />
       <div className="lists-modal-content lists-modal-wide">
         <h2>Adicionar contatos à lista</h2>
+        <div className="lists-add-filters">
+          <label>
+            Filtrar por tag
+            <select
+              value={filterTag}
+              onChange={(e) => setFilterTag(e.target.value)}
+              aria-label="Filtrar contatos por tag"
+            >
+              <option value="">Todas</option>
+              {tags.map((t) => (
+                <option key={t.id} value={t.name}>{t.name}</option>
+              ))}
+            </select>
+          </label>
+          {filterTag && (
+            <span className="lists-add-filter-hint">
+              {contacts.length} contato(s) com a tag &quot;{filterTag}&quot;
+            </span>
+          )}
+        </div>
         {error && <div className="lists-form-error">{error}</div>}
         {loading ? (
           <p>Carregando…</p>
         ) : contacts.length === 0 ? (
-          <p>Nenhum contato disponível (todos já estão nesta lista).</p>
+          <p>
+            {filterTag
+              ? `Nenhum contato com a tag "${filterTag}" (ou todos já estão nesta lista).`
+              : 'Nenhum contato disponível (todos já estão nesta lista).'}
+          </p>
         ) : (
           <>
             <div className="lists-add-list">
@@ -373,10 +406,17 @@ function AddContactsModal({
                   <input type="checkbox" checked={selectedIds.has(c.id)} onChange={() => toggle(c.id)} />
                   <span>{c.phone}</span>
                   <span>{c.name || '—'}</span>
+                  {c.tags.length > 0 && (
+                    <span className="lists-add-row-tags">{c.tags.join(', ')}</span>
+                  )}
                 </label>
               ))}
             </div>
-            {contacts.length > 100 && <p className="lists-add-hint">Exibindo os 100 primeiros. Adicione em lotes.</p>}
+            {contacts.length > 100 && (
+              <p className="lists-add-hint">
+                Exibindo os 100 primeiros de {contacts.length} contatos{filterTag ? ` com a tag "${filterTag}"` : ''}. Adicione em lotes.
+              </p>
+            )}
           </>
         )}
         <div className="lists-form-actions">

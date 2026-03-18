@@ -277,6 +277,37 @@
   border: none;
 }
 
+.lists-add-filters {
+  display: flex;
+  align-items: flex-end;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.lists-add-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #374151;
+}
+
+.lists-add-filters select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  min-width: 160px;
+}
+
+.lists-add-filter-hint {
+  font-size: 0.85rem;
+  color: #64748b;
+  padding: 0.35rem 0;
+}
+
 .lists-add-list {
   max-height: 300px;
   overflow: auto;
@@ -299,6 +330,12 @@
 .lists-add-row span:first-of-type {
   min-width: 120px;
   font-variant-numeric: tabular-nums;
+}
+
+.lists-add-row-tags {
+  font-size: 0.8rem;
+  color: #64748b;
+  margin-left: auto;
 }
 
 .lists-add-hint {
