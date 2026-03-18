@@ -1,7 +1,7 @@
 """campaigns table
 
-Revision ID: 20250306_004
-Revises: 20250306_003
+Revision ID: 20250306_005
+Revises: 20250306_004
 Create Date: 2025-03-06
 
 Aplicada automaticamente na implantação (Easypanel); não rodar migrações no terminal.
@@ -12,8 +12,8 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
-revision: str = "20250306_004"
-down_revision: Union[str, None] = "20250306_003"
+revision: str = "20250306_005"
+down_revision: Union[str, None] = "20250306_004"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
