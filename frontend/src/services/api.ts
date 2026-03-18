@@ -244,4 +244,5 @@ export const campaignsApi = {
   }) => api.post<CampaignItem>('/api/campaigns', data),
   update: (id: number, data: Partial<CampaignItem>) => api.patch<CampaignItem>(`/api/campaigns/${id}`, data),
   delete: (id: number) => api.delete(`/api/campaigns/${id}`),
+  start: (id: number) => api.post<{ message: string }>(`/api/campaigns/${id}/start`),
 }

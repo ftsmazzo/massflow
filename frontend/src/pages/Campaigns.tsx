@@ -32,6 +32,7 @@ export default function Campaigns() {
   const [showForm, setShowForm] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<CampaignItem | null>(null)
   const [instances, setInstances] = useState<Instance[]>([])
+  const [startingId, setStartingId] = useState<number | null>(null)
 
   function load() {
     setLoading(true)
@@ -53,6 +54,21 @@ export default function Campaigns() {
     campaignsApi.delete(c.id)
       .then(load)
       .catch((err) => setError(getApiErrorMessage(err)))
+  }
+
+  function handleStart(c: CampaignItem) {
+    if (c.status !== 'draft') return
+    setStartingId(c.id)
+    setError('')
+    campaignsApi.start(c.id)
+      .then(() => {
+        setStartingId(null)
+        load()
+      })
+      .catch((err) => {
+        setStartingId(null)
+        setError(getApiErrorMessage(err))
+      })
   }
 
   if (error && campaigns.length === 0) {
@@ -107,13 +123,23 @@ export default function Campaigns() {
               </div>
               <div className="campaigns-card-actions">
                 {c.status === 'draft' && (
-                  <button
-                    type="button"
-                    className="campaigns-btn-link"
-                    onClick={() => setEditingCampaign(c)}
-                  >
-                    Editar
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      className="campaigns-btn primary"
+                      disabled={startingId === c.id}
+                      onClick={() => handleStart(c)}
+                    >
+                      {startingId === c.id ? 'Disparando…' : 'Disparar agora'}
+                    </button>
+                    <button
+                      type="button"
+                      className="campaigns-btn-link"
+                      onClick={() => setEditingCampaign(c)}
+                    >
+                      Editar
+                    </button>
+                  </>
                 )}
                 {(c.status === 'draft' || c.status === 'cancelled') && (
                   <button

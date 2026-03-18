@@ -1,6 +1,7 @@
 """
-Campanhas: CRUD e criação. Disparo em implementação futura.
+Campanhas: CRUD, criação e disparo em background.
 """
+import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -12,6 +13,7 @@ from app.models.user import User
 from app.models.campaign import Campaign
 from app.models.list import List
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse
+from app.services.campaign_sender import run_campaign_sync
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 
@@ -113,6 +115,31 @@ def update_campaign(
     db.commit()
     db.refresh(campaign)
     return campaign
+
+
+@router.post("/{campaign_id}/start", status_code=202)
+async def start_campaign(
+    campaign_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Dispara a campanha em background (apenas se status draft e com lista/conteúdo)."""
+    tenant_id = user.tenant_id
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id,
+        Campaign.tenant_id == tenant_id,
+    ).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada.")
+    if campaign.status != "draft":
+        raise HTTPException(status_code=400, detail="Só é possível disparar campanha em rascunho.")
+    if not campaign.list_id:
+        raise HTTPException(status_code=400, detail="Campanha sem lista definida.")
+    content = campaign.content or {}
+    if not content.get("text") and not content.get("caption"):
+        raise HTTPException(status_code=400, detail="Defina o conteúdo (texto ou legenda) antes de disparar.")
+    asyncio.create_task(asyncio.to_thread(run_campaign_sync, campaign_id, tenant_id))
+    return {"message": "Campanha em disparo."}
 
 
 @router.delete("/{campaign_id}", status_code=204)
