@@ -96,3 +96,40 @@ def send_text_sync(
         )
         r.raise_for_status()
         return r.json() if r.content else {}
+
+
+def send_media_sync(
+    api_url: str,
+    api_key: str,
+    instance_name: str,
+    number: str,
+    mediatype: str,
+    mimetype: str,
+    caption: str,
+    media_base64: str,
+    file_name: str,
+) -> dict[str, Any]:
+    """Envia mídia (imagem, vídeo, documento, áudio) via Evolution API - arquivo em base64, não link."""
+    base = _base(api_url)
+    number_clean = "".join(c for c in str(number) if c.isdigit())
+    if not number_clean:
+        raise ValueError("Número inválido")
+    if not media_base64:
+        raise ValueError("Mídia em base64 é obrigatória")
+    media_value = media_base64 if media_base64.startswith("data:") else f"data:{mimetype};base64,{media_base64}"
+    body = {
+        "number": number_clean,
+        "mediatype": mediatype,
+        "mimetype": mimetype,
+        "caption": caption or "",
+        "media": media_value,
+        "fileName": file_name or "file",
+    }
+    with httpx.Client(timeout=60.0) as client:
+        r = client.post(
+            f"{base}/message/sendMedia/{instance_name}",
+            json=body,
+            headers=_headers(api_key),
+        )
+        r.raise_for_status()
+        return r.json() if r.content else {}

@@ -37,3 +37,6 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Uploads (mídia anexada às campanhas)
+backend/uploads/

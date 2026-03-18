@@ -1,10 +1,12 @@
 """
 Disparo de campanha: envia mensagens para os leads da lista via Evolution API.
-Executado em thread em background (não bloqueia o request).
+Suporta texto e mídia (imagem/vídeo/áudio/documento) anexada como arquivo (base64), não link.
 """
+import base64
 import random
 import time
 from datetime import datetime
+from pathlib import Path
 
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
@@ -18,7 +20,10 @@ from app.models.evolution_instance import EvolutionInstance
 from app.models.associations import list_leads, lead_tags
 from app.models.tag import Tag
 from app.models.shielding_config import TenantShieldingConfig
-from app.services.evolution import send_text_sync
+from app.services.evolution import send_text_sync, send_media_sync
+
+UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
+MEDIATYPE_MAP = {"image": "Image", "video": "Video", "audio": "Audio", "document": "Document"}
 
 
 def _resolve_text(text: str, lead: Lead) -> str:
@@ -129,20 +134,54 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
         content = campaign.content or {}
         content_type = (content.get("type") or "text").lower()
         text_template = content.get("text") or content.get("caption") or ""
+        caption_template = str(content.get("caption") or content.get("text") or "")
+
+        # Para mídia: obter base64 do arquivo anexado (media_path) ou já em content (media_base64)
+        media_base64: str | None = None
+        media_mimetype = content.get("media_mimetype") or "image/jpeg"
+        media_filename = content.get("media_filename") or "image.jpg"
+        if content_type in ("image", "video", "audio", "document"):
+            if content.get("media_base64"):
+                media_base64 = content["media_base64"]
+            elif content.get("media_path"):
+                file_path = UPLOADS_DIR / content["media_path"]
+                if file_path.is_file():
+                    media_base64 = base64.b64encode(file_path.read_bytes()).decode("ascii")
+                else:
+                    media_base64 = None
+            if not media_base64:
+                campaign.status = "draft"
+                db.commit()
+                return  # mídia obrigatória para tipo image/video/audio/document não encontrada
 
         for i, lead in enumerate(leads):
             inst = instances[i % len(instances)]
-            text = _resolve_text(text_template, lead) if content_type == "text" else _resolve_text(str(content.get("caption") or content.get("text") or ""), lead)
-            if not text.strip():
-                continue
             try:
-                result = send_text_sync(
-                    inst.api_url,
-                    inst.api_key or "",
-                    inst.name,
-                    lead.phone,
-                    text,
-                )
+                if content_type == "text":
+                    text = _resolve_text(text_template, lead)
+                    if not text.strip():
+                        continue
+                    result = send_text_sync(
+                        inst.api_url,
+                        inst.api_key or "",
+                        inst.name,
+                        lead.phone,
+                        text,
+                    )
+                else:
+                    caption = _resolve_text(caption_template, lead)
+                    mediatype = MEDIATYPE_MAP.get(content_type, "Image")
+                    result = send_media_sync(
+                        inst.api_url,
+                        inst.api_key or "",
+                        inst.name,
+                        lead.phone,
+                        mediatype,
+                        media_mimetype,
+                        caption,
+                        media_base64,
+                        media_filename,
+                    )
                 msg_id = None
                 if isinstance(result, dict) and "key" in result and isinstance(result["key"], dict):
                     msg_id = result["key"].get("id")

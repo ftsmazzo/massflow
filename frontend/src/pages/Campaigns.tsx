@@ -279,11 +279,14 @@ function CampaignEditForm({
   )
   const [contentType, setContentType] = useState((content.type as string) || 'text')
   const [contentText, setContentText] = useState((content.text as string) || '')
-  const [contentMediaUrl, setContentMediaUrl] = useState((content.media_url as string) || '')
+  const [contentMediaPath, setContentMediaPath] = useState((content.media_path as string) || '')
+  const [contentMediaMimetype, setContentMediaMimetype] = useState((content.media_mimetype as string) || '')
+  const [contentMediaFilename, setContentMediaFilename] = useState((content.media_filename as string) || '')
   const [contentCaption, setContentCaption] = useState((content.caption as string) || '')
   const [useGlobalShielding, setUseGlobalShielding] = useState(campaign.use_global_shielding)
   const [instanceIds, setInstanceIds] = useState<number[]>(campaign.instance_ids || [])
   const [loading, setLoading] = useState(false)
+  const [uploadingMedia, setUploadingMedia] = useState(false)
   const [error, setError] = useState('')
 
   function toggleInstance(id: number) {
@@ -310,8 +313,12 @@ function CampaignEditForm({
       text: contentType === 'text' ? contentText : contentCaption || contentText,
     }
     if (contentType !== 'text') {
-      if (contentMediaUrl) contentPayload.media_url = contentMediaUrl
       if (contentCaption) contentPayload.caption = contentCaption
+      if (contentMediaPath) {
+        contentPayload.media_path = contentMediaPath
+        contentPayload.media_mimetype = contentMediaMimetype
+        contentPayload.media_filename = contentMediaFilename
+      }
     }
     const payload = {
       name: name.trim(),
@@ -396,13 +403,29 @@ function CampaignEditForm({
             {contentType !== 'text' && (
               <>
                 <label>
-                  URL da mídia (imagem, vídeo, áudio ou documento)
+                  Anexar arquivo (imagem, vídeo, áudio ou documento) — o arquivo é enviado e anexado ao disparo, não link
                   <input
-                    type="url"
-                    value={contentMediaUrl}
-                    onChange={(e) => setContentMediaUrl(e.target.value)}
-                    placeholder="https://..."
+                    type="file"
+                    accept="image/*,video/*,audio/*,.pdf,.doc,.docx"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      setError('')
+                      setUploadingMedia(true)
+                      campaignsApi.uploadMedia(campaign.id, file)
+                        .then((res) => {
+                          setContentMediaPath(res.data.media_path)
+                          setContentMediaMimetype(res.data.media_mimetype)
+                          setContentMediaFilename(res.data.media_filename)
+                        })
+                        .catch((err) => setError(getApiErrorMessage(err)))
+                        .finally(() => { setUploadingMedia(false); e.target.value = '' })
+                    }}
                   />
+                  {contentMediaFilename && (
+                    <span className="campaigns-form-hint">Anexado: {contentMediaFilename}</span>
+                  )}
+                  {uploadingMedia && <span className="campaigns-form-hint">Enviando arquivo…</span>}
                 </label>
                 <label>
                   {contentType === 'image' || contentType === 'video' || contentType === 'document' ? 'Legenda' : 'Texto (antes/depois do áudio)'}

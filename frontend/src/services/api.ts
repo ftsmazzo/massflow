@@ -245,4 +245,14 @@ export const campaignsApi = {
   update: (id: number, data: Partial<CampaignItem>) => api.patch<CampaignItem>(`/api/campaigns/${id}`, data),
   delete: (id: number) => api.delete(`/api/campaigns/${id}`),
   start: (id: number) => api.post<{ message: string }>(`/api/campaigns/${id}/start`),
+  /** Anexa arquivo de mídia (imagem, vídeo, áudio, documento). Arquivo é enviado e salvo no servidor, não link. */
+  uploadMedia: (id: number, file: File) => {
+    const form = new FormData()
+    form.append('file', file)
+    return api.post<{ media_path: string; media_mimetype: string; media_filename: string; campaign: CampaignItem }>(
+      `/api/campaigns/${id}/media`,
+      form,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+  },
 }
