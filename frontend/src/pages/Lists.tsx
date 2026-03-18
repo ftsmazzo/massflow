@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { listsApi, contactsApi, type ListItem, type Contact } from '../services/api'
 import { getApiErrorMessage } from '../services/api'
+import ImportCsvModal from '../components/ImportCsvModal'
 import './Lists.css'
 
 export default function Lists() {
@@ -116,6 +117,7 @@ function ListDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [showAdd, setShowAdd] = useState(false)
+  const [showImport, setShowImport] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
 
   const listId = id ? parseInt(id, 10) : 0
@@ -133,6 +135,12 @@ function ListDetail() {
 
   function handleAddSuccess() {
     setShowAdd(false)
+    listsApi.get(listId).then((r) => setList(r.data))
+    listsApi.getContacts(listId).then((r) => setContacts(r.data))
+  }
+
+  function handleImportSuccess() {
+    setShowImport(false)
     listsApi.get(listId).then((r) => setList(r.data))
     listsApi.getContacts(listId).then((r) => setContacts(r.data))
   }
@@ -181,6 +189,9 @@ function ListDetail() {
               Remover {selectedIds.size} da lista
             </button>
           )}
+          <button type="button" className="lists-btn secondary" onClick={() => setShowImport(true)}>
+            Importar CSV
+          </button>
           <button type="button" className="lists-btn primary" onClick={() => setShowAdd(true)}>
             Adicionar contatos
           </button>
@@ -194,9 +205,15 @@ function ListDetail() {
       ) : contacts.length === 0 ? (
         <div className="lists-empty">
           <p>Nenhum contato nesta lista.</p>
-          <button type="button" className="lists-btn primary" onClick={() => setShowAdd(true)}>
-            Adicionar contatos
-          </button>
+          <p>Importe um CSV ou adicione contatos já existentes no sistema.</p>
+          <div className="lists-empty-actions">
+            <button type="button" className="lists-btn secondary" onClick={() => setShowImport(true)}>
+              Importar CSV
+            </button>
+            <button type="button" className="lists-btn primary" onClick={() => setShowAdd(true)}>
+              Adicionar contatos
+            </button>
+          </div>
         </div>
       ) : (
         <div className="lists-table-wrap">
@@ -231,6 +248,14 @@ function ListDetail() {
           currentIds={new Set(contacts.map((c) => c.id))}
           onClose={() => setShowAdd(false)}
           onSuccess={handleAddSuccess}
+        />
+      )}
+      {showImport && list && (
+        <ImportCsvModal
+          lists={[list]}
+          defaultListId={listId}
+          onClose={() => setShowImport(false)}
+          onSuccess={handleImportSuccess}
         />
       )}
     </div>

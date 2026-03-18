@@ -25,6 +25,22 @@
   color: #64748b;
 }
 
+.contacts-volume {
+  padding: 0.5rem 0;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  color: #475569;
+}
+
+.contacts-volume-total {
+  font-weight: 500;
+}
+
+.contacts-volume-filter {
+  margin-left: 0.5rem;
+  color: #94a3b8;
+}
+
 .contacts-header-actions {
   display: flex;
   gap: 0.5rem;

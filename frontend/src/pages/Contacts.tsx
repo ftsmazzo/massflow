@@ -13,7 +13,6 @@ export default function Contacts() {
   const [filterTag, setFilterTag] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
-  const [showImport, setShowImport] = useState(false)
 
   function loadContacts() {
     const params: Record<string, unknown> = { limit: 200 }
@@ -38,11 +37,6 @@ export default function Contacts() {
   useEffect(() => {
     loadListsAndTags()
   }, [])
-
-  function handleCreate() {
-    setEditingContact(null)
-    setShowForm(true)
-  }
 
   function handleEdit(c: Contact) {
     setEditingContact(c)
@@ -76,17 +70,16 @@ export default function Contacts() {
       <header className="contacts-header">
         <div>
           <h1>Contatos</h1>
-          <p className="contacts-subtitle">Base de contatos para campanhas e funis</p>
-        </div>
-        <div className="contacts-header-actions">
-          <button type="button" className="contacts-btn secondary" onClick={() => setShowImport(true)}>
-            Importar CSV
-          </button>
-          <button type="button" className="contacts-btn primary" onClick={handleCreate}>
-            Novo contato
-          </button>
+          <p className="contacts-subtitle">Visualize, filtre e gerencie contatos. Inclusão de contatos em Listas (Importar CSV ou adicionar à lista).</p>
         </div>
       </header>
+
+      <div className="contacts-volume">
+        <span className="contacts-volume-total">Exibindo {contacts.length} contato(s)</span>
+        {(filterListId || filterTag) && (
+          <span className="contacts-volume-filter">com os filtros aplicados</span>
+        )}
+      </div>
 
       {error && <div className="contacts-error-banner">{error}</div>}
 
@@ -118,11 +111,8 @@ export default function Contacts() {
         <p className="contacts-loading">Carregando…</p>
       ) : contacts.length === 0 ? (
         <div className="contacts-empty">
-          <p>Nenhum contato ainda.</p>
-          <p>Adicione manualmente ou importe um CSV.</p>
-          <button type="button" className="contacts-btn primary" onClick={handleCreate}>
-            Novo contato
-          </button>
+          <p>Nenhum contato com os filtros atuais.</p>
+          <p>Use <strong>Listas</strong> para importar CSV ou adicionar contatos a uma lista.</p>
         </div>
       ) : (
         <div className="contacts-table-wrap">
@@ -160,19 +150,11 @@ export default function Contacts() {
         </div>
       )}
 
-      {showForm && (
+      {showForm && editingContact != null && (
         <ContactForm
           contact={editingContact}
           onClose={() => { setShowForm(false); setEditingContact(null) }}
           onSuccess={handleFormSuccess}
-        />
-      )}
-
-      {showImport && (
-        <ImportCsvModal
-          lists={lists}
-          onClose={() => setShowImport(false)}
-          onSuccess={() => { setShowImport(false); loadContacts(); loadListsAndTags() }}
         />
       )}
     </div>
@@ -250,159 +232,3 @@ function ContactForm({
   )
 }
 
-function ImportCsvModal({
-  lists,
-  onClose,
-  onSuccess,
-}: {
-  lists: ListItem[]
-  onClose: () => void
-  onSuccess: () => void
-}) {
-  const [file, setFile] = useState<File | null>(null)
-  const [listId, setListId] = useState<number | ''>('')
-  const [tagNames, setTagNames] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState('')
-  const [result, setResult] = useState<{ created: number; updated: number; errors: unknown[] } | null>(null)
-
-  const listRequired = lists.length > 0
-
-  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]
-    setFile(f || null)
-    setResult(null)
-  }
-
-  function parseCsv(text: string): string[][] {
-    const lines = text.split(/\r?\n/).filter((l) => l.trim())
-    const rows: string[][] = []
-    for (const line of lines) {
-      const row: string[] = []
-      let current = ''
-      let inQuotes = false
-      for (let i = 0; i < line.length; i++) {
-        const c = line[i]
-        if (c === '"') {
-          inQuotes = !inQuotes
-        } else if ((c === ',' || c === ';') && !inQuotes) {
-          row.push(current.trim())
-          current = ''
-        } else {
-          current += c
-        }
-      }
-      row.push(current.trim())
-      rows.push(row)
-    }
-    return rows
-  }
-
-  function handleImport() {
-    if (!file) return
-    if (listRequired && !listId) {
-      setError('Selecione uma lista para importar os contatos (público da campanha).')
-      return
-    }
-    setError('')
-    setLoading(true)
-    setResult(null)
-    const reader = new FileReader()
-    reader.onload = () => {
-      const text = String(reader.result)
-      const rows = parseCsv(text)
-      if (rows.length < 2) {
-        setError('CSV deve ter cabeçalho e ao menos uma linha.')
-        setLoading(false)
-        return
-      }
-      const header = rows[0].map((h) => h.toLowerCase().replace(/\s/g, '_'))
-      const phoneIdx = header.findIndex((h) => /phone|telefone|celular|whatsapp/.test(h))
-      if (phoneIdx < 0) {
-        setError('Coluna de telefone não encontrada. Use "phone", "telefone" ou "celular" no cabeçalho.')
-        setLoading(false)
-        return
-      }
-      const nameIdx = header.findIndex((h) => /name|nome/.test(h))
-      const emailIdx = header.findIndex((h) => /email|e-mail/.test(h))
-      const contacts: Array<{ phone: string; name?: string; email?: string; tags?: string[]; list_id?: number; opt_in?: boolean }> = []
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i]
-        const phone = (row[phoneIdx] || '').replace(/\D/g, '')
-        if (phone.length < 10) continue
-        contacts.push({
-          phone: phone,
-          name: nameIdx >= 0 && row[nameIdx] ? row[nameIdx] : undefined,
-          email: emailIdx >= 0 && row[emailIdx] ? row[emailIdx] : undefined,
-          tags: tagNames ? tagNames.split(',').map((t) => t.trim()).filter(Boolean) : undefined,
-          list_id: listId ? Number(listId) : undefined,
-          opt_in: true,
-        })
-      }
-      if (contacts.length === 0) {
-        setError('Nenhum telefone válido encontrado.')
-        setLoading(false)
-        return
-      }
-      contactsApi.sync(contacts)
-        .then((r) => {
-          setResult(r.data)
-          if (r.data.errors.length === 0) onSuccess()
-        })
-        .catch((err) => setError(getApiErrorMessage(err)))
-        .finally(() => setLoading(false))
-    }
-    reader.readAsText(file, 'utf-8')
-  }
-
-  return (
-    <div className="contacts-modal" role="dialog" aria-modal="true">
-      <div className="contacts-modal-backdrop" onClick={onClose} />
-      <div className="contacts-modal-content contacts-import-modal">
-        <h2>Importar CSV</h2>
-        <p className="contacts-import-hint">Contatos entram para uma lista (público da campanha). Cabeçalho do CSV: "phone", "telefone" ou "celular"; opcional: "nome", "email".</p>
-        {lists.length === 0 ? (
-          <>
-            <div className="contacts-form-error">Crie uma lista em Listas antes de importar contatos.</div>
-            <div className="contacts-form-actions">
-              <button type="button" onClick={onClose}>Fechar</button>
-            </div>
-          </>
-        ) : (
-          <>
-        <label>
-          Lista (obrigatório)
-          <select value={listId === '' ? '' : listId} onChange={(e) => setListId(e.target.value === '' ? '' : Number(e.target.value))} required>
-            <option value="">Selecione uma lista</option>
-            {lists.map((l) => (
-              <option key={l.id} value={l.id}>{l.name}</option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Arquivo CSV
-          <input type="file" accept=".csv,.txt" onChange={handleFileChange} />
-        </label>
-        <label>
-          Tags (vírgula)
-          <input type="text" value={tagNames} onChange={(e) => setTagNames(e.target.value)} placeholder="ex: importado, base-2025" />
-        </label>
-        {error && <div className="contacts-form-error">{error}</div>}
-        {result && (
-          <div className="contacts-import-result">
-            <p>Criados: {result.created} · Atualizados: {result.updated}</p>
-            {result.errors.length > 0 && <p>Erros: {result.errors.length}</p>}
-          </div>
-        )}
-        <div className="contacts-form-actions">
-          <button type="button" onClick={onClose}>Fechar</button>
-          <button type="button" className="primary" onClick={handleImport} disabled={!file || loading}>
-            {loading ? 'Importando…' : 'Importar'}
-          </button>
-        </div>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
