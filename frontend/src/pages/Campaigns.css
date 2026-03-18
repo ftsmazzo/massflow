@@ -197,7 +197,8 @@
 }
 
 .campaigns-modal-content label input,
-.campaigns-modal-content label select {
+.campaigns-modal-content label select,
+.campaigns-modal-content label textarea {
   display: block;
   width: 100%;
   margin-top: 0.35rem;
@@ -205,6 +206,76 @@
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   font-size: 0.95rem;
+}
+
+.campaigns-modal-content label textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+
+.campaigns-edit-modal {
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.campaigns-fieldset {
+  margin: 1rem 0;
+  padding: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.campaigns-fieldset legend {
+  padding: 0 0.5rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: #374151;
+}
+
+.campaigns-fieldset label {
+  margin-bottom: 0.75rem;
+}
+
+.campaigns-fieldset label:last-of-type {
+  margin-bottom: 0;
+}
+
+.campaigns-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.campaigns-check input {
+  width: auto;
+  display: inline-block;
+  margin-top: 0;
+}
+
+.campaigns-instance-list {
+  max-height: 160px;
+  overflow-y: auto;
+  margin-bottom: 0.5rem;
+}
+
+.campaigns-instance-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.35rem 0;
+}
+
+.campaigns-instance-row input {
+  width: auto;
+  margin-top: 0;
+}
+
+.campaigns-instance-status {
+  font-size: 0.8rem;
+  color: #64748b;
 }
 
 .campaigns-form-error {
