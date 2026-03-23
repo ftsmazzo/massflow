@@ -11,6 +11,7 @@ from app.models.evolution_instance import EvolutionInstance
 from app.models.shielding_config import TenantShieldingConfig
 from app.models.campaign import Campaign
 from app.models.campaign_message import CampaignMessage
+from app.models.campaign_inbound_reply import CampaignInboundReply
 from app.models.associations import list_leads, lead_tags
 
-__all__ = ["Base", "Tenant", "PlanType", "User", "Tag", "List", "Lead", "EvolutionInstance", "TenantShieldingConfig", "Campaign", "CampaignMessage", "list_leads", "lead_tags"]
+__all__ = ["Base", "Tenant", "PlanType", "User", "Tag", "List", "Lead", "EvolutionInstance", "TenantShieldingConfig", "Campaign", "CampaignMessage", "CampaignInboundReply", "list_leads", "lead_tags"]

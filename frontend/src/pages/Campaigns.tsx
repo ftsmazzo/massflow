@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { campaignsApi, listsApi, instancesApi, type CampaignItem, type ListItem, type Instance } from '../services/api'
+import {
+  campaignsApi,
+  listsApi,
+  instancesApi,
+  type CampaignItem,
+  type ListItem,
+  type Instance,
+  type CampaignInboundReplyItem,
+} from '../services/api'
 import { getApiErrorMessage } from '../services/api'
 import './Campaigns.css'
 
@@ -24,6 +32,12 @@ const TYPE_LABEL: Record<string, string> = {
   scheduled: 'Agendada',
 }
 
+const DELETABLE_STATUSES = new Set(['draft', 'cancelled', 'completed', 'scheduled'])
+
+function canDeleteCampaign(c: CampaignItem) {
+  return DELETABLE_STATUSES.has(c.status)
+}
+
 export default function Campaigns() {
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([])
   const [lists, setLists] = useState<ListItem[]>([])
@@ -34,6 +48,11 @@ export default function Campaigns() {
   const [instances, setInstances] = useState<Instance[]>([])
   const [startingId, setStartingId] = useState<number | null>(null)
   const [pollingId, setPollingId] = useState<number | null>(null)
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+  const [inboundReplies, setInboundReplies] = useState<CampaignInboundReplyItem[]>([])
+  const [repliesLoading, setRepliesLoading] = useState(false)
+  const [showReplies, setShowReplies] = useState(false)
 
   function load() {
     setLoading(true)
@@ -65,11 +84,67 @@ export default function Campaigns() {
     return () => clearInterval(timer)
   }, [pollingId])
 
+  function loadInboundReplies() {
+    setRepliesLoading(true)
+    campaignsApi
+      .inboundReplies(40)
+      .then((r) => setInboundReplies(r.data))
+      .catch(() => setInboundReplies([]))
+      .finally(() => setRepliesLoading(false))
+  }
+
+  function toggleSelect(id: number) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function selectAllDeletable() {
+    const ids = campaigns.filter(canDeleteCampaign).map((c) => c.id)
+    setSelectedIds(new Set(ids))
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set())
+  }
+
+  function handleBulkDelete() {
+    const ids = [...selectedIds]
+    if (ids.length === 0) return
+    if (!confirm(`Excluir ${ids.length} campanha(s)? Esta ação não pode ser desfeita.`)) return
+    setBulkDeleting(true)
+    setError('')
+    campaignsApi
+      .bulkDelete(ids)
+      .then((res) => {
+        if (res.data.errors.length > 0) {
+          setError(
+            `Excluídas: ${res.data.deleted}. Algumas falharam (status em andamento ou não encontrada).`
+          )
+        }
+        clearSelection()
+        load()
+      })
+      .catch((err) => setError(getApiErrorMessage(err)))
+      .finally(() => setBulkDeleting(false))
+  }
+
   function handleDelete(c: CampaignItem) {
-    if (c.status !== 'draft' && c.status !== 'cancelled') return
+    if (!canDeleteCampaign(c)) return
     if (!confirm(`Excluir a campanha "${c.name}"?`)) return
-    campaignsApi.delete(c.id)
-      .then(load)
+    campaignsApi
+      .delete(c.id)
+      .then(() => {
+        setSelectedIds((prev) => {
+          const next = new Set(prev)
+          next.delete(c.id)
+          return next
+        })
+        load()
+      })
       .catch((err) => setError(getApiErrorMessage(err)))
   }
 
@@ -111,6 +186,102 @@ export default function Campaigns() {
 
       {error && <div className="campaigns-error-banner">{error}</div>}
 
+      <section className="campaigns-replies-section">
+        <button
+          type="button"
+          className="campaigns-btn campaigns-btn-ghost"
+          onClick={() => {
+            setShowReplies((v) => {
+              if (!v) loadInboundReplies()
+              return !v
+            })
+          }}
+        >
+          {showReplies ? 'Ocultar' : 'Ver'} respostas recebidas (salvas no MassFlow)
+        </button>
+        {showReplies && (
+          <div className="campaigns-replies-panel">
+            <div className="campaigns-replies-toolbar">
+              <button
+                type="button"
+                className="campaigns-btn"
+                disabled={repliesLoading}
+                onClick={() => loadInboundReplies()}
+              >
+                {repliesLoading ? 'Atualizando…' : 'Atualizar lista'}
+              </button>
+              <p className="campaigns-form-hint">
+                Toda resposta de lead atribuída a uma campanha fica aqui, com ou sem webhook n8n. “Enc. n8n” indica se o
+                envio externo foi feito.
+              </p>
+            </div>
+            {inboundReplies.length === 0 && !repliesLoading ? (
+              <p className="campaigns-form-hint">Nenhuma resposta registrada ainda.</p>
+            ) : (
+              <div className="campaigns-replies-table-wrap">
+                <table className="campaigns-replies-table">
+                  <thead>
+                    <tr>
+                      <th>Quando</th>
+                      <th>Campanha</th>
+                      <th>Lead</th>
+                      <th>Mensagem</th>
+                      <th>Enc. n8n</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inboundReplies.map((row) => (
+                      <tr key={row.id}>
+                        <td>{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</td>
+                        <td>{row.campaign_name ?? `#${row.campaign_id}`}</td>
+                        <td>
+                          {(row.lead_name || '—') + (row.lead_phone ? ` · ${row.lead_phone}` : '')}
+                        </td>
+                        <td className="campaigns-replies-msg">{row.message_text}</td>
+                        <td>
+                          {row.forwarded_to_webhook ? 'Sim' : 'Não'}
+                          {row.webhook_skip_reason && (
+                            <span className="campaigns-replies-skip" title={row.webhook_skip_reason}>
+                              ({row.webhook_skip_reason})
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+      </section>
+
+      {campaigns.length > 0 && (
+        <div className="campaigns-bulk-toolbar">
+          <label className="campaigns-bulk-select-all">
+            <input
+              type="checkbox"
+              checked={
+                campaigns.filter(canDeleteCampaign).length > 0 &&
+                campaigns.filter(canDeleteCampaign).every((c) => selectedIds.has(c.id))
+              }
+              onChange={(e) => (e.target.checked ? selectAllDeletable() : clearSelection())}
+            />
+            Selecionar todas (excluíveis)
+          </label>
+          {selectedIds.size > 0 && (
+            <button
+              type="button"
+              className="campaigns-btn danger"
+              disabled={bulkDeleting}
+              onClick={handleBulkDelete}
+            >
+              {bulkDeleting ? 'Excluindo…' : `Excluir selecionadas (${selectedIds.size})`}
+            </button>
+          )}
+        </div>
+      )}
+
       {loading ? (
         <p className="campaigns-loading">Carregando…</p>
       ) : campaigns.length === 0 ? (
@@ -125,6 +296,15 @@ export default function Campaigns() {
         <div className="campaigns-grid">
           {campaigns.map((c) => (
             <article key={c.id} className="campaigns-card">
+              {canDeleteCampaign(c) && (
+                <label className="campaigns-card-select">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.has(c.id)}
+                    onChange={() => toggleSelect(c.id)}
+                  />
+                </label>
+              )}
               <div className="campaigns-card-main">
                 <h2 className="campaigns-card-name">{c.name}</h2>
                 <p className="campaigns-card-meta">
@@ -159,7 +339,7 @@ export default function Campaigns() {
                     </button>
                   </>
                 )}
-                {(c.status === 'draft' || c.status === 'cancelled') && (
+                {canDeleteCampaign(c) && (
                   <button
                     type="button"
                     className="campaigns-btn-link danger"
@@ -206,6 +386,8 @@ function CampaignForm({
   const [name, setName] = useState('')
   const [listId, setListId] = useState<number | ''>('')
   const [type, setType] = useState<'immediate' | 'scheduled'>('immediate')
+  const [campaignWebhookUrl, setCampaignWebhookUrl] = useState('')
+  const [responseKeywords, setResponseKeywords] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -217,11 +399,19 @@ function CampaignForm({
     }
     setError('')
     setLoading(true)
+    const content: Record<string, unknown> = { type: 'text', text: '' }
+    const w = campaignWebhookUrl.trim()
+    if (w) content.campaign_webhook_url = w
+    const kw = responseKeywords
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+    if (kw.length > 0) content.response_keywords = kw
     campaignsApi.create({
       name: name.trim(),
       type,
       list_id: Number(listId),
-      content: { type: 'text', text: '' },
+      content,
     })
       .then(onSuccess)
       .catch((err) => setError(getApiErrorMessage(err)))
@@ -231,7 +421,7 @@ function CampaignForm({
   return (
     <div className="campaigns-modal" role="dialog" aria-modal="true">
       <div className="campaigns-modal-backdrop" onClick={onClose} />
-      <div className="campaigns-modal-content">
+      <div className="campaigns-modal-content campaigns-modal-wide">
         <h2>Nova campanha</h2>
         <p className="campaigns-form-hint">Conteúdo e agendamento podem ser editados depois no rascunho.</p>
         <form onSubmit={handleSubmit}>
@@ -265,6 +455,25 @@ function CampaignForm({
               <option value="scheduled">Agendada</option>
             </select>
           </label>
+          <label>
+            Webhook n8n (opcional)
+            <input
+              value={campaignWebhookUrl}
+              onChange={(e) => setCampaignWebhookUrl(e.target.value)}
+              placeholder="https://seu-n8n/webhook/..."
+            />
+          </label>
+          <label>
+            Palavras-chave (opcional — com URL, só chama o n8n se alguma aparecer no texto)
+            <input
+              value={responseKeywords}
+              onChange={(e) => setResponseKeywords(e.target.value)}
+              placeholder="quero, sim, interesse"
+            />
+          </label>
+          <p className="campaigns-form-hint">
+            As respostas do lead ficam salvas no MassFlow mesmo sem webhook. O texto completo é definido ao editar o rascunho.
+          </p>
           <div className="campaigns-form-actions">
             <button type="button" onClick={onClose}>Cancelar</button>
             <button type="submit" disabled={loading}>{loading ? 'Criando…' : 'Criar rascunho'}</button>
@@ -510,7 +719,7 @@ function CampaignEditForm({
               />
             </label>
             <label>
-              Palavras-chave (opcional — só para o campo matched_keywords nas respostas)
+              Palavras-chave (opcional — se preenchidas, o n8n só é chamado quando alguma aparecer no texto)
               <input
                 value={responseKeywords}
                 onChange={(e) => setResponseKeywords(e.target.value)}
@@ -519,9 +728,9 @@ function CampaignEditForm({
             </label>
             <p className="campaigns-form-hint">
               O disparo em massa <strong>não</strong> chama o n8n. Configure na Evolution o <code>POST</code> para{' '}
-              <code>/api/campaigns/inbound/SEU_TENANT_ID</code> (mensagens recebidas). Quando o contato responder, o
-              MassFlow envia ao webhook <code>lead_message</code> = texto <strong>que o usuário digitou</strong> (evento{' '}
-              <code>campaign_reply_received</code>).
+              <code>/api/campaigns/inbound/SEU_TENANT_ID</code> (mensagens recebidas). Toda resposta recebida fica
+              registrada no MassFlow (aba Campanhas). Com URL de webhook: encaminha ao n8n só se não houver palavras-chave
+              ou se houver match; caso contrário economiza chamadas externas.
             </p>
           </fieldset>
           <label className="campaigns-check">

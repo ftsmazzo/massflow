@@ -19,9 +19,16 @@ from app.database import get_db
 from app.models.user import User
 from app.models.campaign import Campaign
 from app.models.campaign_message import CampaignMessage
+from app.models.campaign_inbound_reply import CampaignInboundReply
 from app.models.lead import Lead
 from app.models.list import List
-from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse
+from app.schemas.campaign import (
+    CampaignBulkDelete,
+    CampaignCreate,
+    CampaignInboundReplyItem,
+    CampaignResponse,
+    CampaignUpdate,
+)
 from app.services.campaign_sender import run_campaign_sync
 from app.services.inbound_evolution import (
     extract_inbound_text_and_phone,
@@ -47,6 +54,9 @@ EXT_FROM_MIME = {
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 logger = logging.getLogger(__name__)
+
+# Exclusão: rascunho, cancelada, concluída ou agendada (ainda não disparada). Em andamento: não excluir.
+DELETABLE_CAMPAIGN_STATUSES = frozenset({"draft", "cancelled", "completed", "scheduled"})
 
 
 def _fold_accents(s: str) -> str:
@@ -80,17 +90,13 @@ def _n8n_webhook_url(content: dict) -> str:
     ).strip()
 
 
-def _latest_sent_message_with_webhook(
+def _latest_sent_message(
     db: Session,
     tenant_id: int,
     lead_id: int,
 ) -> tuple[CampaignMessage | None, Campaign | None]:
-    """
-    Último disparo enviado ao lead cuja campanha tenha URL de webhook.
-    Evita usar só o último envio globalmente: se a campanha mais recente não tiver webhook,
-    ainda assim encontra uma campanha anterior que tenha (ex.: vários testes).
-    """
-    rows = (
+    """Último disparo com status enviado para o lead (atribui a resposta a essa campanha)."""
+    row = (
         db.query(CampaignMessage, Campaign)
         .join(Campaign, Campaign.id == CampaignMessage.campaign_id)
         .filter(
@@ -99,12 +105,11 @@ def _latest_sent_message_with_webhook(
             CampaignMessage.status == "sent",
         )
         .order_by(desc(CampaignMessage.sent_at), desc(CampaignMessage.id))
-        .all()
+        .first()
     )
-    for cm, camp in rows:
-        if _n8n_webhook_url(camp.content or {}):
-            return cm, camp
-    return None, None
+    if not row:
+        return None, None
+    return row[0], row[1]
 
 
 @router.get("", response_model=list[CampaignResponse])
@@ -131,8 +136,10 @@ async def inbound_campaign_reply(
 ):
     """
     Evolution envia aqui as mensagens recebidas do lead.
-    Se a campanha tiver URL de webhook n8n, encaminha **toda** resposta (filtro por palavra-chave é opcional no n8n).
-    Palavras-chave na campanha, se preenchidas, aparecem em **matched_keywords** (informativo).
+    Toda resposta atribuída a uma campanha é **persistida** em `campaign_inbound_replies` (não depende do n8n).
+    Encaminhamento ao webhook n8n só ocorre se houver URL na campanha e:
+    - não houver palavras-chave configuradas, ou
+    - pelo menos uma palavra-chave aparecer no texto (economiza chamadas externas).
     """
     try:
         payload_raw = await request.json()
@@ -187,60 +194,40 @@ async def inbound_campaign_reply(
     lead.last_response_at = datetime.utcnow()
     db.commit()
 
-    latest_msg, campaign = _latest_sent_message_with_webhook(db, tenant_id, lead.id)
-    if not latest_msg:
-        any_sent = (
-            db.query(CampaignMessage)
-            .join(Campaign, Campaign.id == CampaignMessage.campaign_id)
-            .filter(
-                Campaign.tenant_id == tenant_id,
-                CampaignMessage.lead_id == lead.id,
-                CampaignMessage.status == "sent",
-            )
-            .first()
-        )
-        if not any_sent:
-            logger.info(
-                "campaign_inbound tenant_id=%s reason=sem_disparo_previo lead_id=%s",
-                tenant_id,
-                lead.id,
-            )
-            return {"matched": False, "forwarded": False, "reason": "sem_disparo_previo"}
+    latest_msg, campaign = _latest_sent_message(db, tenant_id, lead.id)
+    if not latest_msg or not campaign:
         logger.info(
-            "campaign_inbound tenant_id=%s reason=webhook_nao_configurado lead_id=%s (há disparo mas nenhuma campanha com URL de webhook)",
+            "campaign_inbound tenant_id=%s reason=sem_disparo_previo lead_id=%s",
             tenant_id,
             lead.id,
         )
-        out = {
-            "matched": False,
-            "forwarded": False,
-            "reason": "webhook_nao_configurado",
-            "hint": "Preencha a URL do webhook em pelo menos uma campanha que tenha disparado para este lead (a última campanha pode ser só teste sem URL).",
-        }
-        if debug:
-            out["debug"] = {
-                "detail": "Existem CampaignMessage sent, mas nenhuma campanha associada tem campaign_webhook_url.",
-            }
-        return out
-
-    if not campaign:
-        logger.warning("campaign_inbound tenant_id=%s reason=campanha_nao_encontrada", tenant_id)
-        return {"matched": False, "forwarded": False, "reason": "campanha_nao_encontrada"}
+        return {"stored": False, "matched": False, "forwarded": False, "reason": "sem_disparo_previo"}
 
     content = campaign.content or {}
     webhook_url = _n8n_webhook_url(content)
     keywords = _extract_keywords(content)
-    if not webhook_url:
-        logger.warning(
-            "campaign_inbound tenant_id=%s campaign_id=%s webhook_vazio_apos_filtro",
-            tenant_id,
-            campaign.id,
-        )
-        return {"matched": False, "forwarded": False, "reason": "webhook_nao_configurado"}
-
     matched_kw = _matched_keyword_list(inbound_text, keywords) if keywords else []
+
+    skip_reason: str | None = None
+    if not webhook_url:
+        skip_reason = "sem_webhook"
+    elif keywords and not matched_kw:
+        skip_reason = "keyword_sem_match"
+
+    forward_n8n = bool(webhook_url) and (not keywords or bool(matched_kw))
+
     lead_display_name = (lead.name or "").strip() or "Contato"
-    # lead_message = texto da mensagem recebida (Evolution), nunca o texto do disparo da campanha
+    reply_row = CampaignInboundReply(
+        tenant_id=tenant_id,
+        campaign_id=campaign.id,
+        lead_id=lead.id,
+        message_text=inbound_text,
+        forwarded_to_webhook=False,
+        webhook_skip_reason=skip_reason if not forward_n8n else None,
+    )
+    db.add(reply_row)
+    db.flush()
+
     outbound_payload = {
         "event": "campaign_reply_received",
         "tenant_id": tenant_id,
@@ -251,17 +238,42 @@ async def inbound_campaign_reply(
         "lead_phone": lead.phone,
         "lead_message": inbound_text,
         "matched_keywords": matched_kw,
+        "inbound_reply_id": reply_row.id,
         "source": "massflow",
     }
+
+    if not forward_n8n:
+        db.commit()
+        logger.info(
+            "campaign_inbound armazenado tenant_id=%s campaign_id=%s lead_id=%s reply_id=%s skip=%s",
+            tenant_id,
+            campaign.id,
+            lead.id,
+            reply_row.id,
+            skip_reason,
+        )
+        return {
+            "stored": True,
+            "matched": True,
+            "forwarded": False,
+            "reason": skip_reason,
+            "matched_keywords": matched_kw,
+            "inbound_reply_id": reply_row.id,
+        }
+
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(webhook_url, json=outbound_payload)
             resp.raise_for_status()
+        reply_row.forwarded_to_webhook = True
+        reply_row.webhook_skip_reason = None
+        db.commit()
         logger.info(
-            "campaign_inbound webhook_ok tenant_id=%s campaign_id=%s lead_id=%s http=%s",
+            "campaign_inbound webhook_ok tenant_id=%s campaign_id=%s lead_id=%s reply_id=%s http=%s",
             tenant_id,
             campaign.id,
             lead.id,
+            reply_row.id,
             resp.status_code,
         )
     except Exception as e:
@@ -271,13 +283,25 @@ async def inbound_campaign_reply(
             campaign.id,
             lead.id,
         )
+        reply_row.webhook_skip_reason = "erro_ao_enviar_webhook"
+        db.commit()
         return {
+            "stored": True,
             "matched": True,
             "forwarded": False,
             "reason": "erro_ao_enviar_webhook",
             "error": str(e)[:500],
+            "matched_keywords": matched_kw,
+            "inbound_reply_id": reply_row.id,
         }
-    return {"matched": True, "forwarded": True}
+
+    return {
+        "stored": True,
+        "matched": True,
+        "forwarded": True,
+        "matched_keywords": matched_kw,
+        "inbound_reply_id": reply_row.id,
+    }
 
 
 @router.get("/inbound-config")
@@ -299,6 +323,70 @@ def get_inbound_webhook_config(
         "inbound_webhook_url": full_url,
         "hint": "Na Evolution, Webhook URL = inbound_webhook_url. Evento: messages.upsert.",
     }
+
+
+@router.get("/inbound-replies", response_model=list[CampaignInboundReplyItem])
+def list_inbound_replies(
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Últimas respostas de leads recebidas (persistidas no MassFlow, com ou sem n8n)."""
+    tenant_id = user.tenant_id
+    rows = (
+        db.query(CampaignInboundReply, Campaign.name, Lead.name, Lead.phone)
+        .join(Campaign, Campaign.id == CampaignInboundReply.campaign_id)
+        .join(Lead, Lead.id == CampaignInboundReply.lead_id)
+        .filter(CampaignInboundReply.tenant_id == tenant_id)
+        .order_by(desc(CampaignInboundReply.created_at))
+        .limit(limit)
+        .all()
+    )
+    out: list[CampaignInboundReplyItem] = []
+    for r, campaign_name, lead_name, lead_phone in rows:
+        out.append(
+            CampaignInboundReplyItem(
+                id=r.id,
+                tenant_id=r.tenant_id,
+                campaign_id=r.campaign_id,
+                campaign_name=campaign_name,
+                lead_id=r.lead_id,
+                lead_name=lead_name,
+                lead_phone=lead_phone,
+                message_text=r.message_text,
+                forwarded_to_webhook=r.forwarded_to_webhook,
+                webhook_skip_reason=r.webhook_skip_reason,
+                created_at=r.created_at,
+            )
+        )
+    return out
+
+
+@router.post("/bulk-delete")
+def bulk_delete_campaigns(
+    body: CampaignBulkDelete,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Exclui várias campanhas (mesmas regras de status que DELETE único)."""
+    tenant_id = user.tenant_id
+    deleted = 0
+    errors: list[dict] = []
+    for cid in body.ids:
+        campaign = db.query(Campaign).filter(
+            Campaign.id == cid,
+            Campaign.tenant_id == tenant_id,
+        ).first()
+        if not campaign:
+            errors.append({"id": cid, "detail": "nao_encontrada"})
+            continue
+        if campaign.status not in DELETABLE_CAMPAIGN_STATUSES:
+            errors.append({"id": cid, "detail": f"status_{campaign.status}_nao_permite_exclusao"})
+            continue
+        db.delete(campaign)
+        deleted += 1
+    db.commit()
+    return {"deleted": deleted, "errors": errors}
 
 
 @router.get("/{campaign_id}", response_model=CampaignResponse)
@@ -521,7 +609,10 @@ def delete_campaign(
     ).first()
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada.")
-    if campaign.status not in ("draft", "cancelled"):
-        raise HTTPException(status_code=400, detail="Só é possível excluir campanha em rascunho ou cancelada.")
+    if campaign.status not in DELETABLE_CAMPAIGN_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail="Só é possível excluir campanha em rascunho, agendada, concluída ou cancelada (não em andamento).",
+        )
     db.delete(campaign)
     db.commit()

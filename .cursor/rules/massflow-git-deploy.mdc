@@ -1,0 +1,23 @@
+---
+description: Git, terminal e deploy Easypanel (MassFlow)
+alwaysApply: true
+---
+
+# Fluxo de trabalho Git e deploy
+
+## Git (obrigatório após mudanças de código)
+
+- Quando concluir alterações de código que devam ir para o repositório, **fazer commit e push** na branch atual (`main` ou a branch de trabalho), sem pedir ao usuário para rodar comandos manualmente.
+- Mensagens de commit em português ou inglês, em frases completas, descrevendo o que mudou e por quê.
+- **Não** incluir em commits arquivos de rascunho local (`Chat.md`), dumps SQL de teste, nem artefatos de build do front (`*.tsbuildinfo`, `vite.config.js` gerado, etc.) salvo pedido explícito.
+
+## Terminal
+
+- Comandos necessários ao projeto (build, migrações locais, testes) devem ser **executados pelo agente** quando o ambiente permitir; se algo falhar (PATH, venv), registrar o erro e manter o código consistente.
+
+## Easypanel / implantação
+
+- **Contexto Docker**: raiz do repositório (não só `backend/` ou `frontend/`).
+- **Backend**: `backend/Dockerfile`; **Frontend**: `frontend/Dockerfile` (ver comentários nos próprios arquivos).
+- O **`backend/entrypoint.sh`** já executa `alembic upgrade head` antes de subir o `uvicorn`. Novas migrações em `backend/alembic/versions/` são aplicadas **automaticamente** no próximo deploy/restart do container.
+- Após `git push`, o Easypanel (ou CI) deve reconstruir imagens e redeployar; não é necessário rodar Alembic manualmente no servidor se o entrypoint estiver ativo.

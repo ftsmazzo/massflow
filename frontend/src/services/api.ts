@@ -230,6 +230,20 @@ export type CampaignItem = {
   updated_at: string | null
 }
 
+export type CampaignInboundReplyItem = {
+  id: number
+  tenant_id: number
+  campaign_id: number
+  campaign_name: string | null
+  lead_id: number
+  lead_name: string | null
+  lead_phone: string | null
+  message_text: string
+  forwarded_to_webhook: boolean
+  webhook_skip_reason: string | null
+  created_at: string | null
+}
+
 export const campaignsApi = {
   list: (params?: { status?: string }) => api.get<CampaignItem[]>('/api/campaigns', { params }),
   get: (id: number) => api.get<CampaignItem>(`/api/campaigns/${id}`),
@@ -247,6 +261,10 @@ export const campaignsApi = {
   }) => api.post<CampaignItem>('/api/campaigns', data),
   update: (id: number, data: Partial<CampaignItem>) => api.patch<CampaignItem>(`/api/campaigns/${id}`, data),
   delete: (id: number) => api.delete(`/api/campaigns/${id}`),
+  bulkDelete: (ids: number[]) =>
+    api.post<{ deleted: number; errors: { id: number; detail: string }[] }>('/api/campaigns/bulk-delete', { ids }),
+  inboundReplies: (limit?: number) =>
+    api.get<CampaignInboundReplyItem[]>('/api/campaigns/inbound-replies', { params: { limit } }),
   start: (id: number) => api.post<{ message: string }>(`/api/campaigns/${id}/start`),
   /** Anexa arquivo de mídia (imagem, vídeo, áudio, documento). Arquivo é enviado e salvo no servidor, não link. */
   uploadMedia: (id: number, file: File) => {

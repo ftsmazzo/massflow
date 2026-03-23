@@ -42,6 +42,29 @@ class CampaignUpdate(BaseModel):
     scheduled_at: datetime | None = None
 
 
+class CampaignBulkDelete(BaseModel):
+    """Exclusão em lote (mesmas regras de status que DELETE único)."""
+    ids: list[int] = Field(..., min_length=1, max_length=200)
+
+
+class CampaignInboundReplyItem(BaseModel):
+    """Resposta de lead recebida (persistida no MassFlow)."""
+    id: int
+    tenant_id: int
+    campaign_id: int
+    campaign_name: str | None = None
+    lead_id: int
+    lead_name: str | None = None
+    lead_phone: str | None = None
+    message_text: str
+    forwarded_to_webhook: bool
+    webhook_skip_reason: str | None
+    created_at: datetime | None
+
+    class Config:
+        from_attributes = True
+
+
 class CampaignResponse(BaseModel):
     """Campanha na resposta."""
     id: int
