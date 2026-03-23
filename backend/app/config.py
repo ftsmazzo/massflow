@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Redis (filas / cache)
     REDIS_URL: str = os.getenv("REDIS_URL", "")
 
+    # URL pública da API (ex.: https://api.seudominio.com) — usada em telas de integração / webhooks
+    PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "").strip()
+
     @property
     def cors_origins_list(self) -> List[str]:
         origins = []

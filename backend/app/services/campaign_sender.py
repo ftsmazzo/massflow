@@ -3,6 +3,7 @@ Disparo de campanha: envia mensagens para os leads da lista via Evolution API.
 Suporta texto e mídia (imagem/vídeo/áudio/documento) anexada como arquivo (base64), não link.
 """
 import base64
+import logging
 import random
 import time
 from datetime import datetime
@@ -24,6 +25,7 @@ from app.services.evolution import send_text_sync, send_media_sync
 
 UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
 MEDIATYPE_MAP = {"image": "Image", "video": "Video", "audio": "Audio", "document": "Document"}
+logger = logging.getLogger(__name__)
 
 
 def _resolve_text(text: str, lead: Lead) -> str:
@@ -95,6 +97,12 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
             leads_query = leads_query.filter(~Lead.id.in_(subq))
         leads_query = leads_query.distinct()
         leads = leads_query.all()
+        logger.info(
+            "campaign_disparo tenant_id=%s campaign_id=%s leads_total=%s",
+            tenant_id,
+            campaign_id,
+            len(leads),
+        )
 
         instance_ids = campaign.instance_ids if isinstance(campaign.instance_ids, list) else None
         if instance_ids:
@@ -214,5 +222,11 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
         campaign.status = "completed"
         campaign.completed_at = datetime.utcnow()
         db.commit()
+        logger.info(
+            "campaign_disparo_concluido tenant_id=%s campaign_id=%s leads_total=%s",
+            tenant_id,
+            campaign_id,
+            len(leads),
+        )
     finally:
         db.close()

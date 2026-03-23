@@ -2,6 +2,7 @@
 Campanhas: CRUD, criação, upload de mídia (arquivo anexado) e disparo em background.
 """
 import asyncio
+import logging
 import re
 import unicodedata
 from datetime import datetime
@@ -28,6 +29,7 @@ from app.services.inbound_evolution import (
     normalize_phone_digits,
     phones_match_for_lead,
 )
+from app.config import settings
 
 # Pasta de uploads: backend/uploads (criada ao subir; em Docker use volume se quiser persistir)
 BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -45,6 +47,7 @@ EXT_FROM_MIME = {
 }
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
+logger = logging.getLogger(__name__)
 
 
 def _fold_accents(s: str) -> str:
@@ -92,6 +95,36 @@ def list_campaigns(
         q = q.filter(Campaign.status == status)
     campaigns = q.order_by(Campaign.created_at.desc()).all()
     return campaigns
+
+
+@router.get("/webhook-setup")
+def webhook_setup(
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    Mostra a URL que o MassFlow precisa receber na Evolution para encaminhar respostas ao n8n.
+    Defina PUBLIC_BASE_URL no ambiente (ex.: https://api.seudominio.com) para montar a URL completa.
+    """
+    tid = user.tenant_id
+    path = f"/api/campaigns/inbound/{tid}"
+    base = settings.PUBLIC_BASE_URL.rstrip("/")
+    full = f"{base}{path}" if base else None
+    return {
+        "tenant_id": tid,
+        "inbound_path": path,
+        "inbound_url": full,
+        "public_base_url_configured": bool(base),
+        "evolution": {
+            "method": "POST",
+            "url": full or path,
+            "event": "MESSAGES_UPSERT (messages.upsert / mensagens recebidas)",
+            "note": "Sem esta URL na Evolution, o MassFlow nunca recebe a resposta do lead e não chama o webhook do n8n.",
+        },
+        "chatwoot": {
+            "note": "Se a Evolution envia mensagens só para o Chatwoot, o MassFlow não vê o evento. "
+            "Use webhook na Evolution apontando para o MassFlow aqui, ou duplique o fluxo (Evolution → MassFlow e Evolution → Chatwoot).",
+        },
+    }
 
 
 @router.get("/{campaign_id}", response_model=CampaignResponse)
@@ -292,6 +325,11 @@ async def start_campaign(
     if ctype in ("image", "video", "audio", "document") and not has_text:
         pass  # legenda opcional
     asyncio.create_task(asyncio.to_thread(run_campaign_sync, campaign_id, tenant_id))
+    logger.info(
+        "campaign_disparo_iniciado tenant_id=%s campaign_id=%s (lembrete: webhook n8n só após POST em /api/campaigns/inbound/{tenant} com resposta do lead)",
+        tenant_id,
+        campaign_id,
+    )
     return {"message": "Campanha em disparo."}
 
 
@@ -315,6 +353,11 @@ async def inbound_campaign_reply(
 
     extracted = extract_inbound_text_and_phone(payload)
     if not extracted:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=sem_texto_ou_telefone event=%s",
+            tenant_id,
+            payload.get("event"),
+        )
         out: dict = {"matched": False, "forwarded": False, "reason": "sem_texto_ou_telefone"}
         if debug:
             out["debug"] = {
@@ -329,6 +372,11 @@ async def inbound_campaign_reply(
     tenant_leads = db.query(Lead).filter(Lead.tenant_id == tenant_id).all()
     lead = next((l for l in tenant_leads if phones_match_for_lead(inbound_phone, l.phone)), None)
     if not lead:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=lead_nao_encontrado phone_inbound=%s",
+            tenant_id,
+            inbound_phone[-4:] if len(inbound_phone) >= 4 else inbound_phone,
+        )
         out = {"matched": False, "forwarded": False, "reason": "lead_nao_encontrado"}
         if debug:
             out["debug"] = {
@@ -351,6 +399,11 @@ async def inbound_campaign_reply(
         .first()
     )
     if not latest_msg:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=sem_disparo_previo lead_id=%s",
+            tenant_id,
+            lead.id,
+        )
         return {"matched": False, "forwarded": False, "reason": "sem_disparo_previo"}
 
     campaign = db.query(Campaign).filter(
@@ -358,16 +411,33 @@ async def inbound_campaign_reply(
         Campaign.tenant_id == tenant_id,
     ).first()
     if not campaign:
+        logger.warning("campaign_inbound tenant_id=%s reason=campanha_nao_encontrada", tenant_id)
         return {"matched": False, "forwarded": False, "reason": "campanha_nao_encontrada"}
 
     content = campaign.content or {}
     webhook_url = str(content.get("response_webhook_url") or "").strip()
     keywords = _extract_keywords(content)
     if not webhook_url:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=webhook_nao_configurado campaign_id=%s",
+            tenant_id,
+            campaign.id,
+        )
         return {"matched": False, "forwarded": False, "reason": "webhook_nao_configurado"}
     if not keywords:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=keywords_nao_configuradas campaign_id=%s",
+            tenant_id,
+            campaign.id,
+        )
         return {"matched": False, "forwarded": False, "reason": "keywords_nao_configuradas"}
     if not _contains_interest_keyword(inbound_text, keywords):
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=sem_keyword campaign_id=%s lead_id=%s",
+            tenant_id,
+            campaign.id,
+            lead.id,
+        )
         return {"matched": False, "forwarded": False, "reason": "sem_keyword"}
 
     matched_kw = _matched_keyword_list(inbound_text, keywords)
@@ -386,7 +456,20 @@ async def inbound_campaign_reply(
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(webhook_url, json=outbound_payload)
             resp.raise_for_status()
+        logger.info(
+            "campaign_inbound webhook_ok tenant_id=%s campaign_id=%s lead_id=%s http_status=%s",
+            tenant_id,
+            campaign.id,
+            lead.id,
+            resp.status_code,
+        )
     except Exception as e:
+        logger.exception(
+            "campaign_inbound webhook_falhou tenant_id=%s campaign_id=%s lead_id=%s",
+            tenant_id,
+            campaign.id,
+            lead.id,
+        )
         return {
             "matched": True,
             "forwarded": False,

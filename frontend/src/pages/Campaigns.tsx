@@ -1,5 +1,13 @@
 import { useState, useEffect, useRef } from 'react'
-import { campaignsApi, listsApi, instancesApi, type CampaignItem, type ListItem, type Instance } from '../services/api'
+import {
+  campaignsApi,
+  listsApi,
+  instancesApi,
+  type CampaignItem,
+  type ListItem,
+  type Instance,
+  type WebhookSetupInfo,
+} from '../services/api'
 import { getApiErrorMessage } from '../services/api'
 import './Campaigns.css'
 
@@ -34,6 +42,18 @@ export default function Campaigns() {
   const [instances, setInstances] = useState<Instance[]>([])
   const [startingId, setStartingId] = useState<number | null>(null)
   const [pollingId, setPollingId] = useState<number | null>(null)
+  const [integrationOpen, setIntegrationOpen] = useState(false)
+  const [webhookSetup, setWebhookSetup] = useState<WebhookSetupInfo | null>(null)
+
+  function loadWebhookSetup() {
+    campaignsApi
+      .webhookSetup()
+      .then((r) => {
+        setWebhookSetup(r.data)
+        setIntegrationOpen(true)
+      })
+      .catch(() => setError('Não foi possível carregar a URL de integração.'))
+  }
 
   function load() {
     setLoading(true)
@@ -104,10 +124,35 @@ export default function Campaigns() {
           <h1>Campanhas</h1>
           <p className="campaigns-subtitle">Crie e gerencie disparos em massa (lista, conteúdo, blindagem)</p>
         </div>
-        <button type="button" className="campaigns-btn primary" onClick={() => setShowForm(true)}>
-          Nova campanha
-        </button>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <button type="button" className="campaigns-btn" onClick={loadWebhookSetup}>
+            Integração Evolution → n8n
+          </button>
+          <button type="button" className="campaigns-btn primary" onClick={() => setShowForm(true)}>
+            Nova campanha
+          </button>
+        </div>
       </header>
+
+      {integrationOpen && webhookSetup && (
+        <div className="campaigns-error-banner" style={{ background: 'var(--card-bg, #1e293b)', color: 'inherit', textAlign: 'left' }}>
+          <strong>Webhook na Evolution (obrigatório para acionar o n8n após resposta)</strong>
+          <p style={{ margin: '0.5rem 0' }}>
+            POST <code>{webhookSetup.inbound_url ?? webhookSetup.inbound_path}</code>
+            {' — '}
+            evento <code>{webhookSetup.evolution.event}</code>
+          </p>
+          {!webhookSetup.public_base_url_configured && (
+            <p style={{ margin: 0 }}>
+              Defina a variável <code>PUBLIC_BASE_URL</code> no backend (ex.: <code>https://api.seudominio.com</code>) para exibir a URL completa.
+            </p>
+          )}
+          <p style={{ margin: '0.5rem 0 0', fontSize: '0.9rem' }}>{webhookSetup.chatwoot.note}</p>
+          <button type="button" className="campaigns-btn-link" onClick={() => setIntegrationOpen(false)}>
+            Fechar
+          </button>
+        </div>
+      )}
 
       {error && <div className="campaigns-error-banner">{error}</div>}
 
