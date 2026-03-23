@@ -39,6 +39,11 @@ function canDeleteCampaign(c: CampaignItem) {
 }
 
 export default function Campaigns() {
+  const [inboundCfg, setInboundCfg] = useState<{
+    tenant_id: number
+    inbound_webhook_url: string
+    inbound_webhook_url_messages_upsert: string
+  } | null>(null)
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([])
   const [lists, setLists] = useState<ListItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -66,6 +71,16 @@ export default function Campaigns() {
     load()
     listsApi.list().then((r) => setLists(r.data)).catch(() => {})
     instancesApi.list().then((r) => setInstances(r.data)).catch(() => {})
+    campaignsApi
+      .inboundConfig()
+      .then((r) =>
+        setInboundCfg({
+          tenant_id: r.data.tenant_id,
+          inbound_webhook_url: r.data.inbound_webhook_url,
+          inbound_webhook_url_messages_upsert: r.data.inbound_webhook_url_messages_upsert,
+        })
+      )
+      .catch(() => setInboundCfg(null))
   }, [])
 
   useEffect(() => {
@@ -183,6 +198,47 @@ export default function Campaigns() {
           Nova campanha
         </button>
       </header>
+
+      {inboundCfg && (
+        <section className="campaigns-evolution-box" aria-label="Configuração Evolution para respostas">
+          <h2 className="campaigns-evolution-title">Respostas do WhatsApp → n8n (obrigatório na Evolution)</h2>
+          <p className="campaigns-evolution-lead">
+            O disparo da campanha <strong>só envia</strong> mensagens. Para o MassFlow receber quando o lead <strong>responde</strong> e
+            então chamar o webhook do n8n, a <strong>Evolution API</strong> precisa enviar cada mensagem recebida para o link abaixo.
+          </p>
+          <ol className="campaigns-evolution-steps">
+            <li>
+              Abra o painel da <strong>Evolution API</strong> → sua <strong>instância</strong> (o mesmo número que dispara) →{' '}
+              <strong>Webhook</strong>.
+            </li>
+            <li>
+              Cole uma destas URLs. O número <strong>{inboundCfg.tenant_id}</strong> no link é o ID da sua conta no MassFlow (não invente; use o
+              campo copiado abaixo):
+              <div className="campaigns-evolution-urls">
+                <label>
+                  URL principal (recomendada)
+                  <input readOnly value={inboundCfg.inbound_webhook_url} className="campaigns-evolution-input" onFocus={(e) => e.target.select()} />
+                </label>
+                <label>
+                  Se a Evolution exigir URL por evento (messages-upsert)
+                  <input
+                    readOnly
+                    value={inboundCfg.inbound_webhook_url_messages_upsert}
+                    className="campaigns-evolution-input"
+                    onFocus={(e) => e.target.select()}
+                  />
+                </label>
+              </div>
+            </li>
+            <li>
+              Ative o evento <strong>MESSAGES_UPSERT</strong> (ou “mensagens recebidas” / <code>messages.upsert</code>).
+            </li>
+            <li>
+              Salve. Teste: responda no WhatsApp — em “Ver respostas recebidas” deve aparecer uma linha; aí o n8n pode ser chamado.
+            </li>
+          </ol>
+        </section>
+      )}
 
       {error && <div className="campaigns-error-banner">{error}</div>}
 
