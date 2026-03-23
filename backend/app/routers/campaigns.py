@@ -63,13 +63,6 @@ def _extract_keywords(content: dict) -> list[str]:
     return []
 
 
-def _contains_interest_keyword(text: str, keywords: list[str]) -> bool:
-    txt = _fold_accents((text or "").strip().lower())
-    if not txt or not keywords:
-        return False
-    return any(_fold_accents(k) in txt for k in keywords)
-
-
 def _matched_keyword_list(text: str, keywords: list[str]) -> list[str]:
     txt = _fold_accents((text or "").strip().lower())
     out: list[str] = []
@@ -111,8 +104,8 @@ async def inbound_campaign_reply(
 ):
     """
     Evolution envia aqui as mensagens recebidas do lead.
-    Só encaminha ao webhook n8n se a resposta contiver uma das palavras-chave da campanha.
-    O payload usa **lead_message** = texto da resposta do contato (não o texto do disparo).
+    Se a campanha tiver URL de webhook n8n, encaminha **toda** resposta (filtro por palavra-chave é opcional no n8n).
+    Palavras-chave na campanha, se preenchidas, aparecem em **matched_keywords** (informativo).
     """
     try:
         payload_raw = await request.json()
@@ -204,26 +197,11 @@ async def inbound_campaign_reply(
             campaign.id,
         )
         return {"matched": False, "forwarded": False, "reason": "webhook_nao_configurado"}
-    if not keywords:
-        logger.info(
-            "campaign_inbound tenant_id=%s reason=keywords_nao_configuradas campaign_id=%s",
-            tenant_id,
-            campaign.id,
-        )
-        return {"matched": False, "forwarded": False, "reason": "keywords_nao_configuradas"}
-    if not _contains_interest_keyword(inbound_text, keywords):
-        logger.info(
-            "campaign_inbound tenant_id=%s reason=sem_keyword campaign_id=%s lead_id=%s",
-            tenant_id,
-            campaign.id,
-            lead.id,
-        )
-        return {"matched": False, "forwarded": False, "reason": "sem_keyword"}
 
-    matched_kw = _matched_keyword_list(inbound_text, keywords)
+    matched_kw = _matched_keyword_list(inbound_text, keywords) if keywords else []
     lead_display_name = (lead.name or "").strip() or "Contato"
     outbound_payload = {
-        "event": "campaign_reply_keyword_matched",
+        "event": "campaign_reply_received",
         "tenant_id": tenant_id,
         "campaign_id": campaign.id,
         "campaign_name": campaign.name,
@@ -479,13 +457,6 @@ async def start_campaign(
         raise HTTPException(status_code=400, detail="Anexe o arquivo de mídia (imagem/vídeo/áudio/documento) antes de disparar.")
     if ctype in ("image", "video", "audio", "document") and not has_text:
         pass  # legenda opcional
-    wurl = _n8n_webhook_url(content)
-    kws = _extract_keywords(content)
-    if wurl and not kws:
-        raise HTTPException(
-            status_code=400,
-            detail="Defina palavras-chave (separadas por vírgula) na campanha para filtrar respostas ao webhook n8n.",
-        )
     asyncio.create_task(asyncio.to_thread(run_campaign_sync, campaign_id, tenant_id))
     logger.info(
         "campaign_disparo_iniciado tenant_id=%s campaign_id=%s",

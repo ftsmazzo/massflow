@@ -38,26 +38,41 @@ Header: `apikey` com a chave da API.
 
 - `backend/app/services/evolution.py` — chamadas à Evolution API; comentário no topo do arquivo indica versão e links da doc.
 
-## Webhook n8n (resposta do lead + palavras-chave)
+## Webhook n8n (URL na campanha)
 
-1. Na **campanha**: URL do n8n e **palavras-chave** (separadas por vírgula). Só assim o MassFlow filtra e não envia todas as mensagens ao webhook.
+Na **campanha**, campo **Webhook n8n** (opcional). Com URL preenchida:
 
-2. Na **Evolution API**, webhook da instância com **POST** para:
-   - `https://<sua-api>/api/campaigns/inbound/<TENANT_ID>`
-   - Evento: mensagens recebidas (`MESSAGES_UPSERT` / `messages.upsert`).
+### A) Cada envio da campanha
 
-3. Quando o **lead responde** e o texto contém uma palavra-chave, o MassFlow faz `POST` no webhook do n8n com o texto da **resposta do contato**:
+Após cada mensagem **enviada com sucesso** a um lead, o MassFlow faz `POST` no mesmo webhook:
 
 | Campo | Descrição |
 |-------|-----------|
-| `event` | `campaign_reply_keyword_matched` |
-| `lead_message` | Texto que o lead digitou (não o texto do disparo) |
-| `matched_keywords` | Palavras que casaram |
+| `event` | `campaign_message_sent` |
+| `message_text` | Texto (ou legenda) enviado ao lead |
+| `content_type` | `text`, `image`, etc. |
 | `tenant_id`, `campaign_id`, `campaign_name` | Campanha |
 | `lead_id`, `lead_name`, `lead_phone` | Lead |
 | `source` | `massflow` |
 
-O disparo em massa **não** chama o n8n; apenas o fluxo acima, após resposta filtrada.
+### B) Respostas do lead (Evolution → MassFlow)
+
+1. Na **Evolution API**, webhook da instância com **POST** para:
+   - `https://<sua-api>/api/campaigns/inbound/<TENANT_ID>`
+   - Evento: `messages.upsert`.
+
+2. Para **cada resposta** recebida (após um disparo da campanha para aquele lead), o MassFlow faz `POST` no webhook do n8n:
+
+| Campo | Descrição |
+|-------|-----------|
+| `event` | `campaign_reply_received` |
+| `lead_message` | Texto que o lead digitou |
+| `matched_keywords` | Palavras da campanha que aparecem no texto (opcional; vazio se você não configurou keywords) |
+| `tenant_id`, `campaign_id`, `campaign_name` | Campanha |
+| `lead_id`, `lead_name`, `lead_phone` | Lead |
+| `source` | `massflow` |
+
+Filtro por palavra-chave no n8n: use `matched_keywords` ou o texto em `lead_message`. O MassFlow **não bloqueia** envio por keyword.
 
 ### URL exata do webhook
 
@@ -65,9 +80,9 @@ O disparo em massa **não** chama o n8n; apenas o fluxo acima, após resposta fi
 
 ### Se o n8n não receber nada
 
-1. **Webhook da instância Evolution** deve ser o **POST** direto para o MassFlow: `https://<sua-api>/api/campaigns/inbound/<TENANT_ID>` (evento `messages.upsert`). Sem isso o backend não processa a resposta do lead.
-2. **Palavra-chave** — o fluxo só chama o webhook do n8n se o **texto da resposta do lead** contiver uma das palavras-chave configuradas na campanha. Responder sem nenhuma delas retorna `sem_keyword` (comportamento esperado).
-3. **`?debug=true`** — `POST .../inbound/<TENANT_ID>?debug=true` ajuda quando não extrai texto/telefone (`sem_texto_ou_telefone`).
-4. **Outros motivos** na resposta JSON: `lead_nao_encontrado`, `sem_disparo_previo`, `webhook_nao_configurado`, `keywords_nao_configuradas`, `erro_ao_enviar_webhook`.
+1. **URL do webhook** preenchida na campanha (a mesma para envio + respostas).
+2. **Respostas:** webhook da **Evolution** apontando para `POST .../api/campaigns/inbound/<TENANT_ID>` (`messages.upsert`). Sem isso não há `campaign_reply_received`.
+3. **`?debug=true`** no inbound quando não extrai texto/telefone (`sem_texto_ou_telefone`).
+4. **Motivos** na resposta JSON do inbound: `lead_nao_encontrado`, `sem_disparo_previo` (lead sem envio de campanha antes), `webhook_nao_configurado`, `erro_ao_enviar_webhook`.
 
 Documentação Evolution: https://doc.evolution-api.com/v2/en/configuration/webhooks

@@ -9,6 +9,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+import httpx
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,56 @@ from app.services.evolution import send_text_sync, send_media_sync
 UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
 MEDIATYPE_MAP = {"image": "Image", "video": "Video", "audio": "Audio", "document": "Document"}
 logger = logging.getLogger(__name__)
+
+
+def _campaign_n8n_url(content: dict) -> str:
+    return str(
+        content.get("campaign_webhook_url")
+        or content.get("response_webhook_url")
+        or ""
+    ).strip()
+
+
+def _post_webhook_message_sent(
+    webhook_url: str,
+    *,
+    tenant_id: int,
+    campaign: Campaign,
+    lead: Lead,
+    message_text: str,
+    content_type: str,
+) -> None:
+    """Notifica n8n após cada envio bem-sucedido (não interrompe o disparo se falhar)."""
+    payload = {
+        "event": "campaign_message_sent",
+        "tenant_id": tenant_id,
+        "campaign_id": campaign.id,
+        "campaign_name": campaign.name,
+        "lead_id": lead.id,
+        "lead_name": (lead.name or "").strip() or "Contato",
+        "lead_phone": lead.phone,
+        "message_text": message_text,
+        "content_type": content_type,
+        "source": "massflow",
+    }
+    try:
+        with httpx.Client(timeout=20.0) as client:
+            resp = client.post(webhook_url, json=payload)
+            resp.raise_for_status()
+        logger.info(
+            "campaign_send_webhook_ok tenant_id=%s campaign_id=%s lead_id=%s",
+            tenant_id,
+            campaign.id,
+            lead.id,
+        )
+    except Exception as e:
+        logger.warning(
+            "campaign_send_webhook_falhou tenant_id=%s campaign_id=%s lead_id=%s err=%s",
+            tenant_id,
+            campaign.id,
+            lead.id,
+            str(e)[:400],
+        )
 
 
 def _resolve_text(text: str, lead: Lead) -> str:
@@ -140,6 +191,7 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
         min_sec, max_sec = _get_delay_sec(config)
 
         content = campaign.content or {}
+        webhook_url = _campaign_n8n_url(content)
         content_type = (content.get("type") or "text").lower()
         text_template = content.get("text") or content.get("caption") or ""
         caption_template = str(content.get("caption") or content.get("text") or "")
@@ -176,6 +228,7 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
                         lead.phone,
                         text,
                     )
+                    sent_body = text
                 else:
                     caption = _resolve_text(caption_template, lead)
                     mediatype = MEDIATYPE_MAP.get(content_type, "Image")
@@ -190,6 +243,7 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
                         media_base64,
                         media_filename,
                     )
+                    sent_body = caption or ""
                 msg_id = None
                 if isinstance(result, dict) and "key" in result and isinstance(result["key"], dict):
                     msg_id = result["key"].get("id")
@@ -204,6 +258,15 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
                 db.add(cm)
                 lead.last_sent_at = datetime.utcnow()
                 db.commit()
+                if webhook_url:
+                    _post_webhook_message_sent(
+                        webhook_url,
+                        tenant_id=tenant_id,
+                        campaign=campaign,
+                        lead=lead,
+                        message_text=sent_body,
+                        content_type=content_type,
+                    )
             except Exception as e:
                 cm = CampaignMessage(
                     campaign_id=campaign.id,
