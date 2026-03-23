@@ -59,4 +59,16 @@ Header: `apikey` com a chave da API.
 
 O disparo em massa **não** chama o n8n; apenas o fluxo acima, após resposta filtrada.
 
+### URL exata do webhook
+
+- Defina `PUBLIC_BASE_URL` no `.env` do backend (ex.: `https://api.seudominio.com`).
+- Com login no MassFlow, chame **`GET /api/campaigns/inbound-config`** — a resposta traz `inbound_webhook_path` e `inbound_webhook_url` (URL completa se `PUBLIC_BASE_URL` estiver definido).
+
+### Se o n8n não receber nada
+
+1. **Webhook da instância Evolution** deve ser o **POST** direto para o MassFlow: `https://<sua-api>/api/campaigns/inbound/<TENANT_ID>` (evento `messages.upsert`). Sem isso o backend não processa a resposta do lead.
+2. **Palavra-chave** — o fluxo só chama o webhook do n8n se o **texto da resposta do lead** contiver uma das palavras-chave configuradas na campanha. Responder sem nenhuma delas retorna `sem_keyword` (comportamento esperado).
+3. **`?debug=true`** — `POST .../inbound/<TENANT_ID>?debug=true` ajuda quando não extrai texto/telefone (`sem_texto_ou_telefone`).
+4. **Outros motivos** na resposta JSON: `lead_nao_encontrado`, `sem_disparo_previo`, `webhook_nao_configurado`, `keywords_nao_configuradas`, `erro_ao_enviar_webhook`.
+
 Documentação Evolution: https://doc.evolution-api.com/v2/en/configuration/webhooks

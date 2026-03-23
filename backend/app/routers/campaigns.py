@@ -23,8 +23,10 @@ from app.models.lead import Lead
 from app.models.list import List
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse
 from app.services.campaign_sender import run_campaign_sync
+from app.config import settings
 from app.services.inbound_evolution import (
     extract_inbound_text_and_phone,
+    normalize_inbound_payload,
     normalize_phone_digits,
     phones_match_for_lead,
 )
@@ -114,25 +116,36 @@ async def inbound_campaign_reply(
     O payload usa **lead_message** = texto da resposta do contato (não o texto do disparo).
     """
     try:
-        payload = await request.json()
+        payload_raw = await request.json()
     except Exception:
         raise HTTPException(status_code=400, detail="Payload JSON inválido.")
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Payload deve ser objeto JSON.")
+    norm = normalize_inbound_payload(payload_raw)
+    if not norm:
+        raise HTTPException(
+            status_code=400,
+            detail="Payload inválido: envie um objeto JSON ou lista com um objeto (webhook Evolution).",
+        )
 
-    extracted = extract_inbound_text_and_phone(payload)
+    logger.info(
+        "campaign_inbound_received tenant_id=%s event=%s keys=%s",
+        tenant_id,
+        norm.get("event"),
+        list(norm.keys())[:25],
+    )
+
+    extracted = extract_inbound_text_and_phone(payload_raw)
     if not extracted:
         logger.info(
             "campaign_inbound tenant_id=%s reason=sem_texto_ou_telefone event=%s",
             tenant_id,
-            payload.get("event"),
+            norm.get("event"),
         )
         out: dict = {"matched": False, "forwarded": False, "reason": "sem_texto_ou_telefone"}
         if debug:
             out["debug"] = {
-                "event": payload.get("event"),
-                "top_level_keys": list(payload.keys()),
-                "hint": "Evolution: POST nesta URL com evento MESSAGES_UPSERT (messages.upsert).",
+                "event": norm.get("event"),
+                "top_level_keys": list(norm.keys()),
+                "hint": "Evolution: POST nesta URL com evento messages.upsert. JSON no formato padrão da Evolution API.",
             }
         return out
 
@@ -247,6 +260,27 @@ async def inbound_campaign_reply(
             "error": str(e)[:500],
         }
     return {"matched": True, "forwarded": True}
+
+
+@router.get("/inbound-config")
+def get_inbound_webhook_config(
+    user: Annotated[User, Depends(get_current_user)],
+):
+    """
+    URL do webhook que a Evolution (ou n8n na frente) deve chamar ao receber mensagem do lead.
+    Defina PUBLIC_BASE_URL no .env para obter a URL absoluta (https://...).
+    """
+    tenant_id = user.tenant_id
+    path = f"/api/campaigns/inbound/{tenant_id}"
+    base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
+    full_url = f"{base}{path}" if base else None
+    return {
+        "tenant_id": tenant_id,
+        "inbound_webhook_path": path,
+        "inbound_webhook_url": full_url,
+        "public_base_url_configured": bool(base),
+        "hint": "Na Evolution, Webhook URL = inbound_webhook_url (ou sua URL pública + path). Evento: messages.upsert.",
+    }
 
 
 @router.get("/{campaign_id}", response_model=CampaignResponse)

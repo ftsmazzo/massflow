@@ -2,9 +2,11 @@
 Parse de webhooks da Evolution API (v2) para mensagens recebidas (inbound).
 
 Mensagens com `key.fromMe == true` são ignoradas (eco do que a instância enviou).
+Aceita também formato aninhado (lista, envelope HTTP em `body`, `data` como JSON string).
 """
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
 
@@ -41,6 +43,72 @@ def _phone_from_key(key: dict[str, Any]) -> str:
     return ""
 
 
+def normalize_inbound_payload(raw: Any) -> dict[str, Any] | None:
+    """
+    Evolution costuma enviar um objeto; alguns proxies ou testes enviam lista [ {...} ].
+    `data` às vezes vem como string JSON.
+    """
+    p = raw
+    if isinstance(p, list) and len(p) > 0:
+        p = p[0]
+    if not isinstance(p, dict):
+        return None
+    if isinstance(p.get("data"), str):
+        try:
+            inner = json.loads(p["data"])
+            if isinstance(inner, dict):
+                p = {**p, "data": inner}
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Envelope: payload Evolution aninhado em `body` (não confundir com body { sender, content })
+    b = p.get("body")
+    if isinstance(b, dict):
+        is_sender_content_shape = isinstance(b.get("sender"), dict) and b.get("content") is not None
+        looks_evolution = bool(
+            b.get("event") or b.get("data") or b.get("key") or b.get("message")
+        )
+        if not is_sender_content_shape and looks_evolution:
+            p = b
+    elif isinstance(b, str):
+        try:
+            inner_b = json.loads(b)
+            if isinstance(inner_b, dict):
+                is_sender_content_shape = isinstance(inner_b.get("sender"), dict) and inner_b.get("content") is not None
+                looks_evolution = bool(
+                    inner_b.get("event") or inner_b.get("data") or inner_b.get("key")
+                )
+                if not is_sender_content_shape and looks_evolution:
+                    p = inner_b
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return p
+
+
+def _extract_from_sender_content_body(payload: dict[str, Any]) -> tuple[str, str] | None:
+    """Formato alternativo: body.content (texto) + body.sender (telefone/identifier)."""
+    b = payload.get("body")
+    if not isinstance(b, dict):
+        return None
+    msg = b.get("content")
+    if not isinstance(msg, str) or not msg.strip():
+        return None
+    sender = b.get("sender") if isinstance(b.get("sender"), dict) else {}
+    phone = ""
+    if isinstance(sender.get("phone_number"), str):
+        phone = normalize_phone_digits(sender["phone_number"])
+    if not phone and isinstance(sender.get("identifier"), str):
+        ident = sender["identifier"]
+        if "@" in ident:
+            phone = normalize_phone_digits(ident.split("@", 1)[0])
+        else:
+            phone = normalize_phone_digits(ident)
+    if msg.strip() and phone:
+        return (msg.strip(), phone)
+    return None
+
+
 def _iter_message_blocks(payload: dict[str, Any]) -> list[dict[str, Any]]:
     data = payload.get("data")
     if isinstance(data, list):
@@ -55,8 +123,16 @@ def _iter_message_blocks(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return []
 
 
-def extract_inbound_text_and_phone(payload: dict[str, Any]) -> tuple[str, str] | None:
+def extract_inbound_text_and_phone(raw: Any) -> tuple[str, str] | None:
     """Extrai (texto, telefone) da primeira mensagem recebida (não fromMe)."""
+    payload = normalize_inbound_payload(raw)
+    if not payload:
+        return None
+
+    cw = _extract_from_sender_content_body(payload)
+    if cw:
+        return cw
+
     if isinstance(payload.get("text"), str) and payload["text"].strip():
         phone = normalize_phone_digits(payload.get("phone") or payload.get("number") or payload.get("from"))
         if phone:
@@ -69,7 +145,7 @@ def extract_inbound_text_and_phone(payload: dict[str, Any]) -> tuple[str, str] |
     blocks = _iter_message_blocks(payload)
     event = payload.get("event")
     if not blocks:
-        logger.debug("inbound_evolution: nenhum bloco (event=%s)", event)
+        logger.debug("inbound_evolution: nenhum bloco (event=%s keys=%s)", event, list(payload.keys())[:15])
         return None
 
     for block in blocks:
