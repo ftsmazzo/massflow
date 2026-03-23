@@ -326,7 +326,7 @@ function CampaignEditForm({
   }
 
   function doSave(mediaPath: string, mediaMimetype: string, mediaFilename: string) {
-    const contentPayload: Record<string, string> = {
+    const contentPayload: Record<string, unknown> = {
       type: contentType,
       text: contentType === 'text' ? contentText : (contentCaption || contentText || ''),
       ...(contentType !== 'text' && { caption: contentCaption || '' }),
