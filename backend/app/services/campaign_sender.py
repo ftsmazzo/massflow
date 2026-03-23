@@ -9,7 +9,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import httpx
 from sqlalchemy import and_
 from sqlalchemy.orm import Session
 
@@ -47,65 +46,6 @@ def _get_delay_sec(config: dict) -> tuple[int, int]:
         int(delays.get("min_sec", 20)),
         int(delays.get("max_sec", 45)),
     )
-
-
-def _webhook_url_from_content(content: dict) -> str:
-    """URL do n8n (ou outro) para notificar após cada envio bem-sucedido."""
-    return str(
-        content.get("campaign_webhook_url")
-        or content.get("response_webhook_url")
-        or ""
-    ).strip()
-
-
-def _notify_campaign_webhook(
-    *,
-    url: str,
-    tenant_id: int,
-    campaign: Campaign,
-    lead: Lead,
-    content_type: str,
-    message_text: str,
-    evolution_instance_id: int,
-    evolution_instance_name: str,
-    message_id: str | None,
-) -> None:
-    """
-    POST JSON simples no envio inicial (após WhatsApp aceitar a mensagem).
-    Falha no webhook não cancela o disparo.
-    """
-    payload = {
-        "event": "campaign_message_sent",
-        "tenant_id": tenant_id,
-        "campaign_id": campaign.id,
-        "campaign_name": campaign.name,
-        "lead_id": lead.id,
-        "lead_name": (lead.name or "").strip() or "Contato",
-        "lead_phone": lead.phone,
-        "message_text": message_text,
-        "content_type": content_type,
-        "evolution_instance_id": evolution_instance_id,
-        "evolution_instance_name": evolution_instance_name,
-        "whatsapp_message_id": message_id,
-        "source": "massflow",
-    }
-    try:
-        with httpx.Client(timeout=20.0) as client:
-            r = client.post(url, json=payload)
-            r.raise_for_status()
-        logger.info(
-            "campaign_webhook_ok campaign_id=%s lead_id=%s http=%s",
-            campaign.id,
-            lead.id,
-            r.status_code,
-        )
-    except Exception as e:
-        logger.warning(
-            "campaign_webhook_falhou campaign_id=%s lead_id=%s err=%s",
-            campaign.id,
-            lead.id,
-            str(e)[:400],
-        )
 
 
 def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
@@ -222,17 +162,13 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
                 db.commit()
                 return  # mídia obrigatória para tipo image/video/audio/document não encontrada
 
-        webhook_url = _webhook_url_from_content(content)
-
         for i, lead in enumerate(leads):
             inst = instances[i % len(instances)]
             try:
-                sent_text_for_webhook = ""
                 if content_type == "text":
                     text = _resolve_text(text_template, lead)
                     if not text.strip():
                         continue
-                    sent_text_for_webhook = text
                     result = send_text_sync(
                         inst.api_url,
                         inst.api_key or "",
@@ -242,7 +178,6 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
                     )
                 else:
                     caption = _resolve_text(caption_template, lead)
-                    sent_text_for_webhook = caption
                     mediatype = MEDIATYPE_MAP.get(content_type, "Image")
                     result = send_media_sync(
                         inst.api_url,
@@ -269,18 +204,6 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
                 db.add(cm)
                 lead.last_sent_at = datetime.utcnow()
                 db.commit()
-                if webhook_url:
-                    _notify_campaign_webhook(
-                        url=webhook_url,
-                        tenant_id=tenant_id,
-                        campaign=campaign,
-                        lead=lead,
-                        content_type=content_type,
-                        message_text=sent_text_for_webhook,
-                        evolution_instance_id=inst.id,
-                        evolution_instance_name=inst.name,
-                        message_id=str(msg_id) if msg_id else None,
-                    )
             except Exception as e:
                 cm = CampaignMessage(
                     campaign_id=campaign.id,

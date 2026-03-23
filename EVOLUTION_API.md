@@ -38,23 +38,25 @@ Header: `apikey` com a chave da API.
 
 - `backend/app/services/evolution.py` — chamadas à Evolution API; comentário no topo do arquivo indica versão e links da doc.
 
-## Webhook n8n (envio inicial — opcional)
+## Webhook n8n (resposta do lead + palavras-chave)
 
-Na campanha, o campo **Webhook n8n (envio inicial)** aceita a URL do seu workflow n8n.
+1. Na **campanha**: URL do n8n e **palavras-chave** (separadas por vírgula). Só assim o MassFlow filtra e não envia todas as mensagens ao webhook.
 
-Após **cada** mensagem enviada com sucesso ao lead (WhatsApp), o MassFlow faz `POST` nessa URL com JSON simples, por exemplo:
+2. Na **Evolution API**, webhook da instância com **POST** para:
+   - `https://<sua-api>/api/campaigns/inbound/<TENANT_ID>`
+   - Evento: mensagens recebidas (`MESSAGES_UPSERT` / `messages.upsert`).
+
+3. Quando o **lead responde** e o texto contém uma palavra-chave, o MassFlow faz `POST` no webhook do n8n com o texto da **resposta do contato**:
 
 | Campo | Descrição |
 |-------|-----------|
-| `event` | `campaign_message_sent` |
-| `tenant_id`, `campaign_id`, `campaign_name` | Identificação da campanha |
+| `event` | `campaign_reply_keyword_matched` |
+| `lead_message` | Texto que o lead digitou (não o texto do disparo) |
+| `matched_keywords` | Palavras que casaram |
+| `tenant_id`, `campaign_id`, `campaign_name` | Campanha |
 | `lead_id`, `lead_name`, `lead_phone` | Lead |
-| `message_text` | Texto ou legenda enviada |
-| `content_type` | `text`, `image`, etc. |
-| `evolution_instance_id`, `evolution_instance_name` | Instância usada |
-| `whatsapp_message_id` | ID da mensagem na Evolution (quando disponível) |
 | `source` | `massflow` |
 
-Falha no webhook **não** cancela o disparo. Logs: `campaign_webhook_ok` / `campaign_webhook_falhou` no backend.
+O disparo em massa **não** chama o n8n; apenas o fluxo acima, após resposta filtrada.
 
-Respostas do lead e continução da conversa costumam ser tratadas pelo **Chatwoot** (Evolution integrado) e pelo seu n8n; não é necessário webhook na Evolution apontando para o MassFlow para esse fluxo.
+Documentação Evolution: https://doc.evolution-api.com/v2/en/configuration/webhooks

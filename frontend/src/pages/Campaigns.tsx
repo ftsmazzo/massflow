@@ -304,6 +304,11 @@ function CampaignEditForm({
   const [campaignWebhookUrl, setCampaignWebhookUrl] = useState(
     String((content.campaign_webhook_url as string) || (content.response_webhook_url as string) || '')
   )
+  const [responseKeywords, setResponseKeywords] = useState(
+    Array.isArray(content.response_keywords)
+      ? (content.response_keywords as string[]).join(', ')
+      : String((content.response_keywords as string) || '')
+  )
   const [useGlobalShielding, setUseGlobalShielding] = useState(campaign.use_global_shielding)
   const [instanceIds, setInstanceIds] = useState<number[]>(campaign.instance_ids || [])
   const [loading, setLoading] = useState(false)
@@ -337,6 +342,11 @@ function CampaignEditForm({
     if (w) {
       contentPayload.campaign_webhook_url = w
     }
+    const kw = responseKeywords
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+    contentPayload.response_keywords = kw
     const payload: Record<string, unknown> = {
       name: name.trim(),
       type,
@@ -492,17 +502,26 @@ function CampaignEditForm({
               </>
             )}
             <label>
-              Webhook n8n (envio inicial — opcional)
+              Webhook n8n (resposta do lead — opcional)
               <input
                 value={campaignWebhookUrl}
                 onChange={(e) => setCampaignWebhookUrl(e.target.value)}
                 placeholder="https://seu-n8n/webhook/..."
               />
             </label>
+            <label>
+              Palavras-chave na resposta (obrigatório se houver webhook)
+              <input
+                value={responseKeywords}
+                onChange={(e) => setResponseKeywords(e.target.value)}
+                placeholder="quero, interesse, sim"
+              />
+            </label>
             <p className="campaigns-form-hint">
-              Após cada mensagem enviada com sucesso ao lead, o MassFlow faz <code>POST</code> nessa URL com JSON simples
-              (<code>event</code>, <code>campaign_id</code>, <code>lead_name</code>, <code>lead_phone</code>, <code>message_text</code>, etc.).
-              Use o mesmo fluxo do Chatwoot/agente quando o lead já estiver conversando com o número do agente.
+              O MassFlow <strong>não</strong> chama o webhook no disparo. Configure na Evolution o <code>POST</code> para{' '}
+              <code>/api/campaigns/inbound/SEU_TENANT_ID</code> (mensagens recebidas). Quando o lead responder contendo
+              uma das palavras-chave, enviamos ao n8n o JSON com <code>lead_message</code> = texto da resposta do contato
+              (evento <code>campaign_reply_keyword_matched</code>).
             </p>
           </fieldset>
           <label className="campaigns-check">

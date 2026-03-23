@@ -4,19 +4,30 @@ Campanhas: CRUD, criação, upload de mídia (arquivo anexado) e disparo em back
 import asyncio
 import logging
 import re
+import unicodedata
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.models.campaign import Campaign
+from app.models.campaign_message import CampaignMessage
+from app.models.lead import Lead
 from app.models.list import List
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse
 from app.services.campaign_sender import run_campaign_sync
+from app.services.inbound_evolution import (
+    extract_inbound_text_and_phone,
+    normalize_phone_digits,
+    phones_match_for_lead,
+)
 
 # Pasta de uploads: backend/uploads (criada ao subir; em Docker use volume se quiser persistir)
 BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -37,6 +48,44 @@ router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 logger = logging.getLogger(__name__)
 
 
+def _fold_accents(s: str) -> str:
+    nfd = unicodedata.normalize("NFD", s)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
+
+
+def _extract_keywords(content: dict) -> list[str]:
+    raw = content.get("response_keywords")
+    if isinstance(raw, list):
+        return [str(k).strip().lower() for k in raw if str(k).strip()]
+    if isinstance(raw, str):
+        return [k.strip().lower() for k in raw.split(",") if k.strip()]
+    return []
+
+
+def _contains_interest_keyword(text: str, keywords: list[str]) -> bool:
+    txt = _fold_accents((text or "").strip().lower())
+    if not txt or not keywords:
+        return False
+    return any(_fold_accents(k) in txt for k in keywords)
+
+
+def _matched_keyword_list(text: str, keywords: list[str]) -> list[str]:
+    txt = _fold_accents((text or "").strip().lower())
+    out: list[str] = []
+    for k in keywords:
+        if _fold_accents(k) in txt and k not in out:
+            out.append(k)
+    return out
+
+
+def _n8n_webhook_url(content: dict) -> str:
+    return str(
+        content.get("campaign_webhook_url")
+        or content.get("response_webhook_url")
+        or ""
+    ).strip()
+
+
 @router.get("", response_model=list[CampaignResponse])
 def list_campaigns(
     user: Annotated[User, Depends(get_current_user)],
@@ -50,6 +99,154 @@ def list_campaigns(
         q = q.filter(Campaign.status == status)
     campaigns = q.order_by(Campaign.created_at.desc()).all()
     return campaigns
+
+
+@router.post("/inbound/{tenant_id}")
+async def inbound_campaign_reply(
+    tenant_id: int,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    debug: bool = Query(False, description="Inclui dados de diagnóstico na resposta"),
+):
+    """
+    Evolution envia aqui as mensagens recebidas do lead.
+    Só encaminha ao webhook n8n se a resposta contiver uma das palavras-chave da campanha.
+    O payload usa **lead_message** = texto da resposta do contato (não o texto do disparo).
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Payload JSON inválido.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload deve ser objeto JSON.")
+
+    extracted = extract_inbound_text_and_phone(payload)
+    if not extracted:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=sem_texto_ou_telefone event=%s",
+            tenant_id,
+            payload.get("event"),
+        )
+        out: dict = {"matched": False, "forwarded": False, "reason": "sem_texto_ou_telefone"}
+        if debug:
+            out["debug"] = {
+                "event": payload.get("event"),
+                "top_level_keys": list(payload.keys()),
+                "hint": "Evolution: POST nesta URL com evento MESSAGES_UPSERT (messages.upsert).",
+            }
+        return out
+
+    inbound_text, inbound_phone = extracted
+
+    tenant_leads = db.query(Lead).filter(Lead.tenant_id == tenant_id).all()
+    lead = next((l for l in tenant_leads if phones_match_for_lead(inbound_phone, l.phone)), None)
+    if not lead:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=lead_nao_encontrado",
+            tenant_id,
+        )
+        out = {"matched": False, "forwarded": False, "reason": "lead_nao_encontrado"}
+        if debug:
+            out["debug"] = {
+                "inbound_phone_normalized": inbound_phone,
+                "sample_lead_phones": [normalize_phone_digits(l.phone) for l in tenant_leads[:5]],
+            }
+        return out
+    lead.last_response_at = datetime.utcnow()
+    db.commit()
+
+    latest_msg = (
+        db.query(CampaignMessage)
+        .join(Campaign, Campaign.id == CampaignMessage.campaign_id)
+        .filter(
+            Campaign.tenant_id == tenant_id,
+            CampaignMessage.lead_id == lead.id,
+            CampaignMessage.status == "sent",
+        )
+        .order_by(desc(CampaignMessage.sent_at), desc(CampaignMessage.id))
+        .first()
+    )
+    if not latest_msg:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=sem_disparo_previo lead_id=%s",
+            tenant_id,
+            lead.id,
+        )
+        return {"matched": False, "forwarded": False, "reason": "sem_disparo_previo"}
+
+    campaign = db.query(Campaign).filter(
+        Campaign.id == latest_msg.campaign_id,
+        Campaign.tenant_id == tenant_id,
+    ).first()
+    if not campaign:
+        logger.warning("campaign_inbound tenant_id=%s reason=campanha_nao_encontrada", tenant_id)
+        return {"matched": False, "forwarded": False, "reason": "campanha_nao_encontrada"}
+
+    content = campaign.content or {}
+    webhook_url = _n8n_webhook_url(content)
+    keywords = _extract_keywords(content)
+    if not webhook_url:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=webhook_nao_configurado campaign_id=%s",
+            tenant_id,
+            campaign.id,
+        )
+        return {"matched": False, "forwarded": False, "reason": "webhook_nao_configurado"}
+    if not keywords:
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=keywords_nao_configuradas campaign_id=%s",
+            tenant_id,
+            campaign.id,
+        )
+        return {"matched": False, "forwarded": False, "reason": "keywords_nao_configuradas"}
+    if not _contains_interest_keyword(inbound_text, keywords):
+        logger.info(
+            "campaign_inbound tenant_id=%s reason=sem_keyword campaign_id=%s lead_id=%s",
+            tenant_id,
+            campaign.id,
+            lead.id,
+        )
+        return {"matched": False, "forwarded": False, "reason": "sem_keyword"}
+
+    matched_kw = _matched_keyword_list(inbound_text, keywords)
+    lead_display_name = (lead.name or "").strip() or "Contato"
+    outbound_payload = {
+        "event": "campaign_reply_keyword_matched",
+        "tenant_id": tenant_id,
+        "campaign_id": campaign.id,
+        "campaign_name": campaign.name,
+        "lead_id": lead.id,
+        "lead_name": lead_display_name,
+        "lead_phone": lead.phone,
+        "lead_message": inbound_text,
+        "matched_keywords": matched_kw,
+        "source": "massflow",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(webhook_url, json=outbound_payload)
+            resp.raise_for_status()
+        logger.info(
+            "campaign_inbound webhook_ok tenant_id=%s campaign_id=%s lead_id=%s http=%s",
+            tenant_id,
+            campaign.id,
+            lead.id,
+            resp.status_code,
+        )
+    except Exception as e:
+        logger.exception(
+            "campaign_inbound webhook_falhou tenant_id=%s campaign_id=%s lead_id=%s",
+            tenant_id,
+            campaign.id,
+            lead.id,
+        )
+        return {
+            "matched": True,
+            "forwarded": False,
+            "reason": "erro_ao_enviar_webhook",
+            "error": str(e)[:500],
+        }
+    return {"matched": True, "forwarded": True}
 
 
 @router.get("/{campaign_id}", response_model=CampaignResponse)
@@ -249,9 +446,16 @@ async def start_campaign(
         raise HTTPException(status_code=400, detail="Anexe o arquivo de mídia (imagem/vídeo/áudio/documento) antes de disparar.")
     if ctype in ("image", "video", "audio", "document") and not has_text:
         pass  # legenda opcional
+    wurl = _n8n_webhook_url(content)
+    kws = _extract_keywords(content)
+    if wurl and not kws:
+        raise HTTPException(
+            status_code=400,
+            detail="Defina palavras-chave (separadas por vírgula) na campanha para filtrar respostas ao webhook n8n.",
+        )
     asyncio.create_task(asyncio.to_thread(run_campaign_sync, campaign_id, tenant_id))
     logger.info(
-        "campaign_disparo_iniciado tenant_id=%s campaign_id=%s (webhook n8n após cada envio, se URL na campanha)",
+        "campaign_disparo_iniciado tenant_id=%s campaign_id=%s",
         tenant_id,
         campaign_id,
     )
