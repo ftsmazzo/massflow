@@ -300,7 +300,7 @@ async def inbound_campaign_reply(
     tenant_id: int,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    debug: Annotated[bool, Query(False, description="Inclui dados de diagnóstico na resposta (uso em testes)")],
+    debug: bool = Query(False, description="Inclui dados de diagnóstico na resposta (uso em testes)"),
 ):
     """
     Recebe resposta inbound (ex.: Evolution webhook) e encaminha para webhook IA
