@@ -15,6 +15,7 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
+from app.config import settings
 from app.database import get_db
 from app.models.user import User
 from app.models.campaign import Campaign
@@ -127,19 +128,20 @@ def list_campaigns(
     return campaigns
 
 
-@router.post("/inbound/{tenant_id}")
-async def inbound_campaign_reply(
+async def _inbound_campaign_reply_impl(
     tenant_id: int,
     request: Request,
-    db: Annotated[Session, Depends(get_db)],
-    debug: bool = Query(False, description="Inclui dados de diagnóstico na resposta"),
+    db: Session,
+    debug: bool,
 ):
     """
     Evolution envia aqui as mensagens recebidas do lead.
-    Toda resposta atribuída a uma campanha é **persistida** em `campaign_inbound_replies` (não depende do n8n).
-    Encaminhamento ao webhook n8n só ocorre se houver URL na campanha e:
-    - não houver palavras-chave configuradas, ou
-    - pelo menos uma palavra-chave aparecer no texto (economiza chamadas externas).
+    Respostas atribuídas a uma campanha são persistidas em `campaign_inbound_replies`.
+    Se a campanha tiver URL de webhook n8n, o MassFlow faz POST (palavras-chave vão em `matched_keywords` para o n8n filtrar).
+
+    Rotas aceitas (Evolution com webhook_by_events anexa /messages-upsert à URL base):
+    - POST /inbound/{tenant_id}
+    - POST /inbound/{tenant_id}/messages-upsert
     """
     try:
         payload_raw = await request.json()
@@ -208,13 +210,8 @@ async def inbound_campaign_reply(
     keywords = _extract_keywords(content)
     matched_kw = _matched_keyword_list(inbound_text, keywords) if keywords else []
 
-    skip_reason: str | None = None
-    if not webhook_url:
-        skip_reason = "sem_webhook"
-    elif keywords and not matched_kw:
-        skip_reason = "keyword_sem_match"
-
-    forward_n8n = bool(webhook_url) and (not keywords or bool(matched_kw))
+    forward_n8n = bool(webhook_url)
+    skip_reason: str | None = None if forward_n8n else "sem_webhook"
 
     lead_display_name = (lead.name or "").strip() or "Contato"
     reply_row = CampaignInboundReply(
@@ -262,7 +259,7 @@ async def inbound_campaign_reply(
         }
 
     try:
-        async with httpx.AsyncClient(timeout=20.0) as client:
+        async with httpx.AsyncClient(timeout=20.0, verify=settings.WEBHOOK_VERIFY_SSL) as client:
             resp = await client.post(webhook_url, json=outbound_payload)
             resp.raise_for_status()
         reply_row.forwarded_to_webhook = True
@@ -304,6 +301,18 @@ async def inbound_campaign_reply(
     }
 
 
+@router.post("/inbound/{tenant_id}")
+@router.post("/inbound/{tenant_id}/messages-upsert")
+@router.post("/inbound/{tenant_id}/messages.upsert")
+async def inbound_campaign_reply(
+    tenant_id: int,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    debug: bool = Query(False, description="Inclui dados de diagnóstico na resposta"),
+):
+    return await _inbound_campaign_reply_impl(tenant_id, request, db, debug)
+
+
 @router.get("/inbound-config")
 def get_inbound_webhook_config(
     request: Request,
@@ -317,11 +326,14 @@ def get_inbound_webhook_config(
     path = f"/api/campaigns/inbound/{tenant_id}"
     base = str(request.base_url).rstrip("/")
     full_url = f"{base}{path}"
+    # Evolution com webhook_by_events=true envia para URL + /messages-upsert (ambas as rotas são aceitas)
+    url_messages_upsert = f"{full_url}/messages-upsert"
     return {
         "tenant_id": tenant_id,
         "inbound_webhook_path": path,
         "inbound_webhook_url": full_url,
-        "hint": "Na Evolution, Webhook URL = inbound_webhook_url. Evento: messages.upsert.",
+        "inbound_webhook_url_messages_upsert": url_messages_upsert,
+        "hint": "Na Evolution: evento MESSAGES_UPSERT. Se webhook_by_events estiver ativo, use inbound_webhook_url_messages_upsert ou a base inbound_webhook_url (ambas funcionam).",
     }
 
 

@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Redis (filas / cache)
     REDIS_URL: str = os.getenv("REDIS_URL", "")
 
+    # POST outbound para webhooks externos (n8n): false se HTTPS interno com certificado autoassinado
+    WEBHOOK_VERIFY_SSL: bool = True
+
     @property
     def cors_origins_list(self) -> List[str]:
         origins = []

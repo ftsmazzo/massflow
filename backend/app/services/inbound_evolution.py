@@ -20,6 +20,15 @@ def normalize_phone_digits(value: str | None) -> str:
 def _text_from_inner_message(msg_obj: dict[str, Any]) -> str:
     if not isinstance(msg_obj, dict):
         return ""
+    # Encapsulamentos comuns (Baileys / Evolution)
+    for wrap in ("ephemeralMessage", "viewOnceMessage", "documentWithCaptionMessage"):
+        sub = msg_obj.get(wrap)
+        if isinstance(sub, dict):
+            inner = sub.get("message")
+            if isinstance(inner, dict):
+                t = _text_from_inner_message(inner)
+                if t:
+                    return t
     if isinstance(msg_obj.get("conversation"), str):
         return msg_obj["conversation"]
     etm = msg_obj.get("extendedTextMessage")
@@ -48,10 +57,21 @@ def _text_from_inner_message(msg_obj: dict[str, Any]) -> str:
 
 def _phone_from_key(key: dict[str, Any]) -> str:
     remote_jid = key.get("remoteJid") or key.get("remote_jid")
-    if isinstance(remote_jid, str) and "@" in remote_jid:
-        return normalize_phone_digits(remote_jid.split("@", 1)[0])
-    if isinstance(remote_jid, str):
-        return normalize_phone_digits(remote_jid)
+    # Algumas versões enviam número alternativo (ex.: PN vs LID)
+    alt = key.get("remoteJidAlt") or key.get("remote_jid_alt")
+    for jid in (remote_jid, alt):
+        if isinstance(jid, str) and "@" in jid:
+            part = jid.split("@", 1)[0]
+            # ignora sufixos tipo "123:45" em JIDs compostos
+            if ":" in part:
+                part = part.split(":", 1)[0]
+            digits = normalize_phone_digits(part)
+            if digits:
+                return digits
+        elif isinstance(jid, str):
+            d = normalize_phone_digits(jid)
+            if d:
+                return d
     return ""
 
 

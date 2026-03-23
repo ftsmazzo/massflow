@@ -464,7 +464,7 @@ function CampaignForm({
             />
           </label>
           <label>
-            Palavras-chave (opcional — com URL, só chama o n8n se alguma aparecer no texto)
+            Palavras-chave (opcional — enviadas ao n8n em matched_keywords para você filtrar no fluxo)
             <input
               value={responseKeywords}
               onChange={(e) => setResponseKeywords(e.target.value)}
@@ -719,7 +719,7 @@ function CampaignEditForm({
               />
             </label>
             <label>
-              Palavras-chave (opcional — se preenchidas, o n8n só é chamado quando alguma aparecer no texto)
+              Palavras-chave (opcional — vão no JSON para o n8n em matched_keywords)
               <input
                 value={responseKeywords}
                 onChange={(e) => setResponseKeywords(e.target.value)}
@@ -728,9 +728,8 @@ function CampaignEditForm({
             </label>
             <p className="campaigns-form-hint">
               O disparo em massa <strong>não</strong> chama o n8n. Configure na Evolution o <code>POST</code> para{' '}
-              <code>/api/campaigns/inbound/SEU_TENANT_ID</code> (mensagens recebidas). Toda resposta recebida fica
-              registrada no MassFlow (aba Campanhas). Com URL de webhook: encaminha ao n8n só se não houver palavras-chave
-              ou se houver match; caso contrário economiza chamadas externas.
+              <code>/api/campaigns/inbound/SEU_TENANT_ID</code> (mensagens recebidas).               Toda resposta recebida fica registrada no MassFlow. Com URL de webhook, o MassFlow encaminha ao n8n; use
+              matched_keywords no n8n para filtrar.
             </p>
           </fieldset>
           <label className="campaigns-check">
