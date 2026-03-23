@@ -63,6 +63,32 @@
   color: #475569;
 }
 
+.instances-sync-help {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.instances-sync-help p {
+  margin: 0 0 0.65rem;
+}
+
+.instances-sync-help p:last-child {
+  margin-bottom: 0;
+}
+
+.instances-sync-help code {
+  font-size: 0.8rem;
+  padding: 0.1rem 0.25rem;
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
 .instances-sync-label {
   display: block;
   margin-bottom: 0.75rem;

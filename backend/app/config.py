@@ -44,7 +44,9 @@ class Settings(BaseSettings):
     # POST outbound para webhooks externos (n8n): false se HTTPS interno com certificado autoassinado
     WEBHOOK_VERIFY_SSL: bool = True
 
-    # URL pública do backend MassFlow (ex.: https://api.seudominio.com) — usada ao aplicar webhook na Evolution
+    # Onde a Evolution (na internet) deve chamar o MassFlow. É só o domínio do SEU backend, sem path.
+    # Ex.: https://massflow-backend.seudominio.com ou https://api.seudominio.com
+    # NÃO é URL da Evolution, nÃO é n8n. No Easypanel: copie a URL pública do serviço da API (mesma que responde /health).
     PUBLIC_BASE_URL: str = ""
 
     @property

@@ -97,14 +97,31 @@ export default function Instances() {
           usa <strong>uma URL só</strong>; a Evolution envia no JSON qual instância recebeu a mensagem. Aqui aplicamos essa
           configuração na API da Evolution em <strong>cada</strong> instância cadastrada abaixo.
         </p>
+        <div className="instances-sync-help">
+          <p>
+            <strong>O que colocar aqui (e no PUBLIC_BASE_URL do servidor):</strong> o endereço público <strong>do próprio
+            MassFlow — API</strong>, só domínio + <code>https</code>, <strong>sem</strong> <code>/api</code> no final.
+            Ex.: se no navegador a API responde em{' '}
+            <code>https://meu-backend.easypanel.host/health</code>, use{' '}
+            <code>https://meu-backend.easypanel.host</code>.
+          </p>
+          <p>
+            <strong>Não é:</strong> URL da Evolution, nem do n8n, nem do WhatsApp. É o <strong>seu</strong> backend
+            publicado para a internet receber o webhook da Evolution.
+          </p>
+          <p>
+            <strong>Onde pegar:</strong> no painel do deploy (Easypanel etc.) — URL do **serviço** onde roda o FastAPI; ou
+            copie o mesmo valor de <code>VITE_API_URL</code> do build do front, sem barra no fim.
+          </p>
+        </div>
         <label className="instances-sync-label">
-          URL pública da API MassFlow (opcional se já definiu PUBLIC_BASE_URL no servidor)
+          Mesma URL aqui embaixo (se o servidor não tiver a variável PUBLIC_BASE_URL)
           <input
             type="url"
             className="instances-sync-input"
             value={publicApiBase}
             onChange={(e) => setPublicApiBase(e.target.value)}
-            placeholder="https://api.seudominio.com"
+            placeholder="https://meu-backend.easypanel.host"
           />
         </label>
         <button
