@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { instancesApi, type Instance } from '../services/api'
+import { instancesApi, type Instance, getApiErrorMessage } from '../services/api'
 import './Instances.css'
 
 const STATUS_CONNECTED = 'connected'
@@ -10,6 +10,11 @@ export default function Instances() {
   const [error, setError] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [connectResult, setConnectResult] = useState<{ id: number; pairing_code?: string; code?: string } | null>(null)
+  const [syncLoading, setSyncLoading] = useState(false)
+  const [syncMsg, setSyncMsg] = useState('')
+  const [publicApiBase, setPublicApiBase] = useState(
+    () => (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '') || ''
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -42,6 +47,28 @@ export default function Instances() {
       .catch((e) => setError(e.response?.data?.detail ?? 'Falha ao atualizar status.'))
   }
 
+  function handleSyncInboundWebhook() {
+    setSyncMsg('')
+    setError('')
+    setSyncLoading(true)
+    const base = publicApiBase.trim() || undefined
+    instancesApi
+      .syncInboundWebhook(base ? { public_api_base: base } : {})
+      .then((res) => {
+        const ok = res.data.results.filter((r) => r.ok).length
+        const fail = res.data.results.filter((r) => !r.ok).length
+        setSyncMsg(
+          `URL usada: ${res.data.webhook_url}. OK: ${ok} instância(s). Falha: ${fail}. ` +
+            res.data.results
+              .filter((r) => !r.ok)
+              .map((r) => `${r.name}: ${r.detail ?? 'erro'}`)
+              .join(' · ')
+        )
+      })
+      .catch((e) => setError(getApiErrorMessage(e)))
+      .finally(() => setSyncLoading(false))
+  }
+
   if (loading) return <div className="instances-loading">Carregando instâncias…</div>
   if (error && list.length === 0) return <div className="instances-error">{error}</div>
 
@@ -62,6 +89,38 @@ export default function Instances() {
           {error}
         </div>
       )}
+
+      <section className="instances-sync-panel" aria-label="Webhook respostas WhatsApp">
+        <h2 className="instances-sync-title">Respostas do WhatsApp (todas as linhas)</h2>
+        <p className="instances-sync-text">
+          Você pode ter vários números: o disparo alterna entre eles. <strong>Não é uma URL por número.</strong> O MassFlow
+          usa <strong>uma URL só</strong>; a Evolution envia no JSON qual instância recebeu a mensagem. Aqui aplicamos essa
+          configuração na API da Evolution em <strong>cada</strong> instância cadastrada abaixo.
+        </p>
+        <label className="instances-sync-label">
+          URL pública da API MassFlow (opcional se já definiu PUBLIC_BASE_URL no servidor)
+          <input
+            type="url"
+            className="instances-sync-input"
+            value={publicApiBase}
+            onChange={(e) => setPublicApiBase(e.target.value)}
+            placeholder="https://api.seudominio.com"
+          />
+        </label>
+        <button
+          type="button"
+          className="instances-btn-primary"
+          disabled={syncLoading}
+          onClick={handleSyncInboundWebhook}
+        >
+          {syncLoading ? 'Aplicando…' : 'Aplicar webhook na Evolution (todas as instâncias)'}
+        </button>
+        {syncMsg && (
+          <p className="instances-sync-result" role="status">
+            {syncMsg}
+          </p>
+        )}
+      </section>
 
       {connectResult && (
         <div className="instances-connect-box">

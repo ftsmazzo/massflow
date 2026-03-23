@@ -4,7 +4,7 @@ Respeita plano do tenant: 1=só minhas, 2=só plataforma, 3=ambas.
 """
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 
@@ -13,17 +13,22 @@ from app.database import get_db
 from app.models.user import User
 from app.models.tenant import Tenant, PlanType
 from app.models.evolution_instance import EvolutionInstance
+from app.config import settings
 from app.schemas.evolution_instance import (
     InstanceCreate,
     InstanceUpdate,
     InstanceResponse,
     InstanceConnectResponse,
+    SyncInboundWebhookBody,
+    SyncInboundWebhookResponse,
+    SyncInboundWebhookResultItem,
 )
 from app.services.evolution import (
     create_instance as evo_create,
     connect_instance,
     fetch_connection_state,
     disconnect_instance as evo_disconnect,
+    set_webhook_sync,
 )
 
 router = APIRouter(prefix="/instances", tags=["Instances"])
@@ -72,6 +77,71 @@ def list_instances(
     else:
         return []
     return q.all()
+
+
+def _instances_for_user(user: User, db: Session) -> list[EvolutionInstance]:
+    """Mesmas regras de listagem de instâncias (tenant + plataforma conforme plano)."""
+    tenant = user.tenant
+    q = db.query(EvolutionInstance)
+    if _can_use_tenant_instances(tenant) and _can_use_platform_instances(tenant):
+        q = q.filter(
+            or_(
+                and_(EvolutionInstance.tenant_id == tenant.id, EvolutionInstance.owner == "tenant"),
+                EvolutionInstance.owner == "platform",
+            )
+        )
+    elif _can_use_tenant_instances(tenant):
+        q = q.filter(EvolutionInstance.tenant_id == tenant.id, EvolutionInstance.owner == "tenant")
+    elif _can_use_platform_instances(tenant):
+        q = q.filter(EvolutionInstance.owner == "platform")
+    else:
+        return []
+    return q.all()
+
+
+def _resolve_public_api_base(request: Request, body: SyncInboundWebhookBody) -> str:
+    if body.public_api_base and str(body.public_api_base).strip():
+        return str(body.public_api_base).strip().rstrip("/")
+    pub = (settings.PUBLIC_BASE_URL or "").strip()
+    if pub:
+        return pub.rstrip("/")
+    return str(request.base_url).rstrip("/")
+
+
+@router.post("/sync-inbound-webhook", response_model=SyncInboundWebhookResponse)
+def sync_inbound_webhook(
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    body: SyncInboundWebhookBody = SyncInboundWebhookBody(),
+):
+    """
+    Configura na Evolution API o webhook de mensagens recebidas para **todas** as instâncias do tenant.
+    Uma única URL no MassFlow; o corpo do POST da Evolution identifica qual número (`instance`).
+    """
+    tenant_id = user.tenant_id
+    public_base = _resolve_public_api_base(request, body)
+    webhook_url = f"{public_base}/api/campaigns/inbound/{tenant_id}"
+    instances = _instances_for_user(user, db)
+    if not instances:
+        raise HTTPException(status_code=400, detail="Nenhuma instância disponível.")
+    results: list[SyncInboundWebhookResultItem] = []
+    for inst in instances:
+        try:
+            set_webhook_sync(inst.api_url, inst.api_key or "", inst.name, webhook_url)
+            results.append(
+                SyncInboundWebhookResultItem(instance_id=inst.id, name=inst.name, ok=True, detail=None)
+            )
+        except Exception as e:
+            results.append(
+                SyncInboundWebhookResultItem(
+                    instance_id=inst.id,
+                    name=inst.name,
+                    ok=False,
+                    detail=str(e)[:400],
+                )
+            )
+    return SyncInboundWebhookResponse(tenant_id=tenant_id, webhook_url=webhook_url, results=results)
 
 
 @router.post("", response_model=InstanceResponse, status_code=status.HTTP_201_CREATED)

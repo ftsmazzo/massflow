@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # POST outbound para webhooks externos (n8n): false se HTTPS interno com certificado autoassinado
     WEBHOOK_VERIFY_SSL: bool = True
 
+    # URL pública do backend MassFlow (ex.: https://api.seudominio.com) — usada ao aplicar webhook na Evolution
+    PUBLIC_BASE_URL: str = ""
+
     @property
     def cors_origins_list(self) -> List[str]:
         origins = []

@@ -39,3 +39,21 @@ class InstanceConnectResponse(BaseModel):
     pairing_code: str | None = None
     code: str | None = None
     count: int | None = None
+
+
+class SyncInboundWebhookBody(BaseModel):
+    """URL pública do MassFlow (sem path /api). Se vazio, usa PUBLIC_BASE_URL ou o host do pedido."""
+    public_api_base: str | None = None
+
+
+class SyncInboundWebhookResultItem(BaseModel):
+    instance_id: int
+    name: str
+    ok: bool
+    detail: str | None = None
+
+
+class SyncInboundWebhookResponse(BaseModel):
+    tenant_id: int
+    webhook_url: str
+    results: list[SyncInboundWebhookResultItem]

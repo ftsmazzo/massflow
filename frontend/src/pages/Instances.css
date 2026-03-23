@@ -41,6 +41,54 @@
   background: #4338ca;
 }
 
+.instances-sync-panel {
+  margin-bottom: 1.5rem;
+  padding: 1rem 1.25rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.instances-sync-title {
+  margin: 0 0 0.5rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.instances-sync-text {
+  margin: 0 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: #475569;
+}
+
+.instances-sync-label {
+  display: block;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #334155;
+}
+
+.instances-sync-input {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  margin-top: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.instances-sync-result {
+  margin: 0.75rem 0 0;
+  font-size: 0.85rem;
+  color: #166534;
+  line-height: 1.45;
+}
+
 .instances-error-banner {
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;

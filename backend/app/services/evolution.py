@@ -13,6 +13,7 @@ Endpoints usados:
 """
 import httpx
 from typing import Any
+from urllib.parse import quote
 
 
 def _headers(api_key: str) -> dict:
@@ -151,4 +152,33 @@ def send_media_sync(
         if not r.is_success:
             err_detail = r.text[:500] if r.text else r.reason_phrase
             raise ValueError(f"Evolution API {r.status_code}: {err_detail}")
+        return r.json() if r.content else {}
+
+
+def set_webhook_sync(
+    api_url: str,
+    api_key: str,
+    instance_name: str,
+    webhook_url: str,
+) -> dict[str, Any]:
+    """
+    POST /webhook/set/{instance} (Evolution v2).
+    Uma URL para todas as linhas: webhookByEvents=false; o payload inclui `instance`.
+    """
+    base = _base(api_url)
+    safe = quote(instance_name, safe="")
+    payload = {
+        "enabled": True,
+        "url": webhook_url,
+        "webhookByEvents": False,
+        "webhookBase64": False,
+        "events": ["MESSAGES_UPSERT"],
+    }
+    with httpx.Client(timeout=45.0) as client:
+        r = client.post(
+            f"{base}/webhook/set/{safe}",
+            json=payload,
+            headers=_headers(api_key),
+        )
+        r.raise_for_status()
         return r.json() if r.content else {}

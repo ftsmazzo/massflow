@@ -4,64 +4,6 @@
   margin: 0 auto;
 }
 
-.campaigns-evolution-box {
-  margin-bottom: 1.5rem;
-  padding: 1rem 1.25rem;
-  background: #f0fdf4;
-  border: 1px solid #86efac;
-  border-radius: 12px;
-  font-size: 0.9rem;
-  color: #14532d;
-}
-
-.campaigns-evolution-title {
-  margin: 0 0 0.5rem;
-  font-size: 1.05rem;
-  font-weight: 600;
-  color: #166534;
-}
-
-.campaigns-evolution-lead {
-  margin: 0 0 0.75rem;
-  line-height: 1.45;
-}
-
-.campaigns-evolution-steps {
-  margin: 0;
-  padding-left: 1.25rem;
-  line-height: 1.5;
-}
-
-.campaigns-evolution-steps li {
-  margin-bottom: 0.65rem;
-}
-
-.campaigns-evolution-urls {
-  margin-top: 0.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.campaigns-evolution-urls label {
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #166534;
-}
-
-.campaigns-evolution-input {
-  display: block;
-  width: 100%;
-  margin-top: 0.25rem;
-  padding: 0.45rem 0.6rem;
-  font-size: 0.8rem;
-  font-family: ui-monospace, monospace;
-  border: 1px solid #86efac;
-  border-radius: 6px;
-  background: #fff;
-  color: #0f172a;
-}
-
 .campaigns-header {
   display: flex;
   align-items: flex-start;

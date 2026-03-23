@@ -118,6 +118,13 @@ export const instancesApi = {
   disconnect: (id: number) => api.post<Instance>(`/api/instances/${id}/disconnect`),
   refresh: (id: number) => api.post<Instance>(`/api/instances/${id}/refresh`),
   status: (id: number) => api.get<{ instance: string; connection_state: unknown }>(`/api/instances/${id}/status`),
+  /** Configura na Evolution o webhook de mensagens recebidas em todas as instâncias (uma URL; o JSON traz qual número). */
+  syncInboundWebhook: (body?: { public_api_base?: string }) =>
+    api.post<{
+      tenant_id: number
+      webhook_url: string
+      results: { instance_id: number; name: string; ok: boolean; detail?: string | null }[]
+    }>('/api/instances/sync-inbound-webhook', body ?? {}),
 }
 
 // --- Shielding (Blindagem global)
@@ -267,15 +274,6 @@ export const campaignsApi = {
     api.post<{ deleted: number; errors: { id: number; detail: string }[] }>('/api/campaigns/bulk-delete', { ids }),
   inboundReplies: (limit?: number) =>
     api.get<CampaignInboundReplyItem[]>('/api/campaigns/inbound-replies', { params: { limit } }),
-  /** URL completa para colar na Evolution (webhook de mensagens recebidas). */
-  inboundConfig: () =>
-    api.get<{
-      tenant_id: number
-      inbound_webhook_path: string
-      inbound_webhook_url: string
-      inbound_webhook_url_messages_upsert: string
-      hint: string
-    }>('/api/campaigns/inbound-config'),
   start: (id: number) => api.post<{ message: string }>(`/api/campaigns/${id}/start`),
   /** Anexa arquivo de mídia (imagem, vídeo, áudio, documento). Arquivo é enviado e salvo no servidor, não link. */
   uploadMedia: (id: number, file: File) => {
