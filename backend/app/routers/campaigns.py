@@ -163,9 +163,17 @@ async def _inbound_campaign_reply_impl(
 
     Rotas: POST /inbound/{tenant_id} e .../messages-upsert (webhook_by_events).
     """
+    peer = request.client.host if request.client else "?"
+    logger.info(
+        "campaign_inbound_hit tenant_id=%s path=%s client=%s",
+        tenant_id,
+        request.url.path,
+        peer,
+    )
     try:
         payload_raw = await request.json()
     except Exception:
+        logger.warning("campaign_inbound tenant_id=%s json_invalid client=%s", tenant_id, peer)
         raise HTTPException(status_code=400, detail="Payload JSON inválido.")
     norm = normalize_inbound_payload(payload_raw)
     if not norm:
