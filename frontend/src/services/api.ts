@@ -125,6 +125,24 @@ export const instancesApi = {
       webhook_url: string
       results: { instance_id: number; name: string; ok: boolean; detail?: string | null }[]
     }>('/api/instances/sync-inbound-webhook', body ?? {}),
+  /** Lê na Evolution (GET /webhook/find) o que está salvo e compara com a URL esperada do MassFlow. */
+  inboundWebhookStatus: (publicApiBase?: string) =>
+    api.get<{
+      tenant_id: number
+      expected_inbound_url: string
+      instances: {
+        instance_id: number
+        name: string
+        ok: boolean
+        detail?: string | null
+        evolution_url?: string | null
+        evolution_events?: string[] | null
+        evolution_enabled?: boolean | null
+        url_matches_expected?: boolean | null
+      }[]
+    }>('/api/instances/inbound-webhook-status', {
+      params: publicApiBase && publicApiBase.trim() ? { public_api_base: publicApiBase.trim() } : undefined,
+    }),
 }
 
 // --- Shielding (Blindagem global)

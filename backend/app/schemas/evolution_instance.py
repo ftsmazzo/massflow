@@ -57,3 +57,20 @@ class SyncInboundWebhookResponse(BaseModel):
     tenant_id: int
     webhook_url: str
     results: list[SyncInboundWebhookResultItem]
+
+
+class InboundWebhookStatusItem(BaseModel):
+    instance_id: int
+    name: str
+    ok: bool
+    detail: str | None = None
+    evolution_url: str | None = None
+    evolution_events: list[str] | None = None
+    evolution_enabled: bool | None = None
+    url_matches_expected: bool | None = None
+
+
+class InboundWebhookStatusResponse(BaseModel):
+    tenant_id: int
+    expected_inbound_url: str
+    instances: list[InboundWebhookStatusItem]

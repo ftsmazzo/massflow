@@ -12,6 +12,8 @@ export default function Instances() {
   const [connectResult, setConnectResult] = useState<{ id: number; pairing_code?: string; code?: string } | null>(null)
   const [syncLoading, setSyncLoading] = useState(false)
   const [syncMsg, setSyncMsg] = useState('')
+  const [statusLoading, setStatusLoading] = useState(false)
+  const [statusBlock, setStatusBlock] = useState('')
   const [publicApiBase, setPublicApiBase] = useState(
     () => (import.meta.env.VITE_API_URL as string | undefined)?.replace(/\/+$/, '') || ''
   )
@@ -69,6 +71,39 @@ export default function Instances() {
       .finally(() => setSyncLoading(false))
   }
 
+  function handleInboundWebhookStatus() {
+    setStatusBlock('')
+    setError('')
+    setStatusLoading(true)
+    const base = publicApiBase.trim() || undefined
+    instancesApi
+      .inboundWebhookStatus(base)
+      .then((res) => {
+        const { expected_inbound_url, instances } = res.data
+        const pingUrl = `${expected_inbound_url}/ping`
+        const lines = [
+          `URL que o MassFlow espera na Evolution: ${expected_inbound_url}`,
+          `Teste público (GET, abra no navegador): ${pingUrl}`,
+          '',
+          ...instances.map((row) => {
+            if (!row.ok) return `${row.name}: erro ao ler Evolution — ${row.detail ?? ''}`
+            const match =
+              row.url_matches_expected === true
+                ? 'OK (URL igual à esperada)'
+                : row.url_matches_expected === false
+                  ? 'DIFERENTE da esperada — corrija na Evolution ou use "Aplicar webhook"'
+                  : 'URL na Evolution não retornada'
+            const ev = row.evolution_url ? ` salvo: ${row.evolution_url}` : ''
+            const evs = row.evolution_events?.length ? ` eventos: ${row.evolution_events.join(', ')}` : ''
+            return `${row.name}: ${match}${ev}${evs}`
+          }),
+        ]
+        setStatusBlock(lines.join('\n'))
+      })
+      .catch((e) => setError(getApiErrorMessage(e)))
+      .finally(() => setStatusLoading(false))
+  }
+
   if (loading) return <div className="instances-loading">Carregando instâncias…</div>
   if (error && list.length === 0) return <div className="instances-error">{error}</div>
 
@@ -124,18 +159,34 @@ export default function Instances() {
             placeholder="https://meu-backend.easypanel.host"
           />
         </label>
-        <button
-          type="button"
-          className="instances-btn-primary"
-          disabled={syncLoading}
-          onClick={handleSyncInboundWebhook}
-        >
-          {syncLoading ? 'Aplicando…' : 'Aplicar webhook na Evolution (todas as instâncias)'}
-        </button>
+        <div className="instances-sync-actions">
+          <button
+            type="button"
+            className="instances-btn-primary"
+            disabled={syncLoading || statusLoading}
+            onClick={handleSyncInboundWebhook}
+          >
+            {syncLoading ? 'Aplicando…' : 'Aplicar webhook na Evolution (todas as instâncias)'}
+          </button>
+          <button
+            type="button"
+            className="instances-btn-secondary"
+            disabled={statusLoading || syncLoading}
+            onClick={handleInboundWebhookStatus}
+            title="Consulta na Evolution o que está configurado e compara com a URL do MassFlow"
+          >
+            {statusLoading ? 'Consultando…' : 'Ver o que está na Evolution'}
+          </button>
+        </div>
         {syncMsg && (
           <p className="instances-sync-result" role="status">
             {syncMsg}
           </p>
+        )}
+        {statusBlock && (
+          <pre className="instances-sync-result instances-sync-status" role="status">
+            {statusBlock}
+          </pre>
         )}
       </section>
 

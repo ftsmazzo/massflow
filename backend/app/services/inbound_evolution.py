@@ -1,6 +1,7 @@
 """
-Parse de webhooks da Evolution API (v2) para mensagens recebidas (inbound).
+Parse de webhooks da Evolution API (versão alvo 2.3.7) para mensagens recebidas (inbound).
 
+Evento típico: `messages.upsert` no JSON / `MESSAGES_UPSERT` na configuração do webhook.
 Mensagens com `key.fromMe == true` são ignoradas (eco do que a instância enviou).
 Aceita também formato aninhado (lista, envelope HTTP em `body`, `data` como JSON string).
 """

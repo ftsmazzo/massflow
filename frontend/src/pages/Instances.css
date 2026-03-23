@@ -115,6 +115,24 @@
   line-height: 1.45;
 }
 
+.instances-sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+}
+
+.instances-sync-status {
+  white-space: pre-wrap;
+  font-family: ui-monospace, monospace;
+  font-size: 0.8rem;
+  color: #0f172a;
+  background: #f8fafc;
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
 .instances-error-banner {
   padding: 0.75rem 1rem;
   margin-bottom: 1rem;

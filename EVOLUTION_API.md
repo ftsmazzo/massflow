@@ -2,14 +2,20 @@
 
 O MassFlow integra com **Evolution API** para envio de mensagens WhatsApp (instâncias, QR, texto e mídia).
 
+## Versão alvo (não “v2” genérica)
+
+- **Evolution API: 2.3.7** — esta é a versão que você indicou e a que o código e esta página assumem ao falar de endpoints e corpos JSON.  
+- Os links em `doc.evolution-api.com` usam o caminho **`/v2/`** na URL (referência da API pública), mas **não** substituem o número de release: comportamento e testes devem ser validados na **2.3.7** (incluindo coleção Postman da mesma versão, se você usar uma).
+
 ## Versão mínima
 
 - **Evolution API: 2.3.7** (ou superior).  
-  Alterações que afetam envio de mídia devem consultar a documentação desta versão.
+  Alterações que afetam envio de mídia ou webhooks devem consultar a documentação desta versão (e a coleção Postman correspondente, quando aplicável).
 
 ## Documentação oficial
 
 - **Índice geral:** https://doc.evolution-api.com/llms.txt  
+- **Set Webhook (MassFlow usa este contrato):** https://doc.evolution-api.com/v2/api-reference/webhook/set — `POST /webhook/set/{instance}`, header `apikey`, corpo com `enabled`, `url`, `webhookByEvents`, `webhookBase64`, `events` (ex.: `MESSAGES_UPSERT`).  
 - **Send Media (sendMedia):** https://doc.evolution-api.com/v2/api-reference/message-controller/send-media  
 - **Send Text (sendText):** usado para mensagens só texto.  
 - **Instance (create, connect, connectionState, logout):** criação e conexão de instâncias.
@@ -72,4 +78,4 @@ Filtro por palavra-chave no n8n: use `matched_keywords` ou o texto em `lead_mess
 3. **`?debug=true`** no inbound quando não extrai texto/telefone (`sem_texto_ou_telefone`).
 4. **Motivos** na resposta JSON do inbound: `lead_nao_encontrado`, `sem_disparo_previo` (nunca houve disparo para o lead), `webhook_nao_configurado` (houve disparo mas **nenhuma** campanha com URL de webhook — comum com várias campanhas de teste: a última sem URL bloqueava antes; agora o MassFlow usa o disparo mais recente **que tenha** webhook), `erro_ao_enviar_webhook`.
 
-Documentação Evolution: https://doc.evolution-api.com/v2/en/configuration/webhooks
+Documentação Evolution (webhooks; alinhar à **2.3.7** / sua coleção Postman): https://doc.evolution-api.com/v2/en/configuration/webhooks

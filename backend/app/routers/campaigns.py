@@ -368,6 +368,15 @@ async def _inbound_campaign_reply_impl(
     }
 
 
+@router.get("/inbound/{tenant_id}/ping")
+def inbound_webhook_ping(tenant_id: int):
+    """
+    Público (sem JWT): use no navegador ou `curl` para provar que a URL pública do backend
+    alcança este path — o mesmo host/path base que a Evolution deve usar no POST.
+    """
+    return {"ok": True, "tenant_id": tenant_id, "path": f"/api/campaigns/inbound/{tenant_id}"}
+
+
 @router.post("/inbound/{tenant_id}")
 @router.post("/inbound/{tenant_id}/messages-upsert")
 @router.post("/inbound/{tenant_id}/messages.upsert")

@@ -1,9 +1,13 @@
 """
-Integração com Evolution API (versão mínima: 2.3.7).
+Integração com Evolution API (versão alvo / mínima: 2.3.7).
+
+Referência de release que você usa no servidor; paths em doc.evolution-api.com usam /v2/ na URL,
+mas o contrato validado para este projeto é o da Evolution 2.3.7 (ex.: coleção Postman 2.3.7).
 
 Documentação oficial: https://doc.evolution-api.com/
+- Set Webhook: https://doc.evolution-api.com/v2/api-reference/webhook/set
 - Send Media: https://doc.evolution-api.com/v2/api-reference/message-controller/send-media
-- Índice v2: https://doc.evolution-api.com/llms.txt
+- Índice: https://doc.evolution-api.com/llms.txt
 
 Endpoints usados:
 - POST /instance/create, GET /instance/connect/{instance}, GET /instance/connectionState/{instance}
@@ -155,6 +159,21 @@ def send_media_sync(
         return r.json() if r.content else {}
 
 
+def find_webhook_sync(api_url: str, api_key: str, instance_name: str) -> dict[str, Any]:
+    """
+    GET /webhook/find/{instance} (Evolution API 2.3.7) — URL e eventos configurados na instância.
+    """
+    base = _base(api_url)
+    safe = quote(instance_name, safe="")
+    with httpx.Client(timeout=20.0) as client:
+        r = client.get(
+            f"{base}/webhook/find/{safe}",
+            headers=_headers(api_key),
+        )
+        r.raise_for_status()
+        return r.json() if r.content else {}
+
+
 def set_webhook_sync(
     api_url: str,
     api_key: str,
@@ -162,8 +181,8 @@ def set_webhook_sync(
     webhook_url: str,
 ) -> dict[str, Any]:
     """
-    POST /webhook/set/{instance} (Evolution v2).
-    Uma URL para todas as linhas: webhookByEvents=false; o payload inclui `instance`.
+    POST /webhook/set/{instance} (Evolution API 2.3.7 — mesmo contrato da doc / Postman).
+    Uma URL para todas as linhas: webhookByEvents=false; o payload de saída inclui `instance`.
     """
     base = _base(api_url)
     safe = quote(instance_name, safe="")

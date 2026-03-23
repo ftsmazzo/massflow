@@ -22,12 +22,15 @@ from app.schemas.evolution_instance import (
     SyncInboundWebhookBody,
     SyncInboundWebhookResponse,
     SyncInboundWebhookResultItem,
+    InboundWebhookStatusItem,
+    InboundWebhookStatusResponse,
 )
 from app.services.evolution import (
     create_instance as evo_create,
     connect_instance,
     fetch_connection_state,
     disconnect_instance as evo_disconnect,
+    find_webhook_sync,
     set_webhook_sync,
 )
 
@@ -142,6 +145,107 @@ def sync_inbound_webhook(
                 )
             )
     return SyncInboundWebhookResponse(tenant_id=tenant_id, webhook_url=webhook_url, results=results)
+
+
+def _normalize_url_for_compare(u: str) -> str:
+    s = (u or "").strip().rstrip("/")
+    if s.startswith("https://https://"):
+        s = "https://" + s[16:]
+    elif s.startswith("http://http://"):
+        s = "http://" + s[13:]
+    return s.lower()
+
+
+def _extract_evolution_webhook_url_and_events(data: dict) -> tuple[str | None, list[str] | None, bool | None]:
+    """Resposta plana ou aninhada (webhook.webhook)."""
+    if not isinstance(data, dict):
+        return None, None, None
+    url = data.get("url")
+    events = data.get("events")
+    enabled = data.get("enabled")
+    inner = data.get("webhook")
+    if isinstance(inner, dict):
+        if url is None:
+            url = inner.get("url")
+        if events is None:
+            events = inner.get("events")
+        if enabled is None:
+            enabled = inner.get("enabled")
+        nested = inner.get("webhook")
+        if isinstance(nested, dict):
+            if url is None:
+                url = nested.get("url")
+            if events is None:
+                events = nested.get("events")
+            if enabled is None:
+                enabled = nested.get("enabled")
+    ev_list: list[str] | None = None
+    if isinstance(events, list):
+        ev_list = [str(e) for e in events]
+    en_bool = enabled if isinstance(enabled, bool) else None
+    return (str(url).strip() if url else None), ev_list, en_bool
+
+
+@router.get("/inbound-webhook-status", response_model=InboundWebhookStatusResponse)
+def inbound_webhook_status(
+    request: Request,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    public_api_base: str | None = Query(
+        None,
+        description="Mesma base pública usada no sync (ou PUBLIC_BASE_URL); se vazio, deduz do pedido.",
+    ),
+):
+    """
+    Lê na Evolution (`GET /webhook/find/{instance}`) o que está configurado e compara com a URL
+    que o MassFlow espera para inbound. Use para provar se o problema é URL errada ou Evolution não chamando.
+    """
+    tenant_id = user.tenant_id
+    body = SyncInboundWebhookBody(public_api_base=public_api_base)
+    public_base = _resolve_public_api_base(request, body)
+    expected = f"{public_base}/api/campaigns/inbound/{tenant_id}"
+    expected_n = _normalize_url_for_compare(expected)
+    instances = _instances_for_user(user, db)
+    out: list[InboundWebhookStatusItem] = []
+    for inst in instances:
+        try:
+            raw = find_webhook_sync(inst.api_url, inst.api_key or "", inst.name)
+            ev_url, ev_events, ev_en = _extract_evolution_webhook_url_and_events(raw)
+            match = (
+                _normalize_url_for_compare(ev_url or "") == expected_n
+                if ev_url
+                else None
+            )
+            out.append(
+                InboundWebhookStatusItem(
+                    instance_id=inst.id,
+                    name=inst.name,
+                    ok=True,
+                    detail=None,
+                    evolution_url=ev_url,
+                    evolution_events=ev_events,
+                    evolution_enabled=ev_en,
+                    url_matches_expected=match,
+                )
+            )
+        except Exception as e:
+            out.append(
+                InboundWebhookStatusItem(
+                    instance_id=inst.id,
+                    name=inst.name,
+                    ok=False,
+                    detail=str(e)[:500],
+                    evolution_url=None,
+                    evolution_events=None,
+                    evolution_enabled=None,
+                    url_matches_expected=None,
+                )
+            )
+    return InboundWebhookStatusResponse(
+        tenant_id=tenant_id,
+        expected_inbound_url=expected,
+        instances=out,
+    )
 
 
 @router.post("", response_model=InstanceResponse, status_code=status.HTTP_201_CREATED)
