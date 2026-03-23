@@ -58,3 +58,14 @@ Fluxo: **Evolution → MassFlow** (`/api/campaigns/inbound/...`) → se bater pa
 **Diagnóstico:** chame o endpoint com `?debug=1` em ambiente de teste; a resposta JSON inclui dicas se o telefone ou o formato do payload não bateram.
 
 Documentação Evolution sobre webhooks: https://doc.evolution-api.com/v2/en/configuration/webhooks
+
+### Formato do POST para o n8n (webhook do agente)
+
+Na campanha, o campo **Formato do corpo enviado ao n8n** define o JSON:
+
+| Valor | Uso |
+|-------|-----|
+| **Chatwoot** (padrão) | Corpo no estilo webhook Chatwoot: `event: message_created`, `message_type: incoming`, `content`, `sender.phone_number`, `sender.identifier`, `conversation`, etc. Compatível com workflows que já leem o mesmo formato do Chatwoot. Metadados do MassFlow ficam em `additional_attributes.massflow`. |
+| **MassFlow** | Objeto simples: `lead_name`, `lead_phone`, `lead_message`, `matched_keywords`, etc. |
+
+Opcionalmente, em **Chatwoot**, preencha Account ID / Nome e Inbox ID / Nome para alinhar `account` e `inbox` ao seu Chatwoot (como no payload que você copiou).

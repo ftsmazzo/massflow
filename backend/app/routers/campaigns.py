@@ -22,6 +22,7 @@ from app.models.lead import Lead
 from app.models.list import List
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse
 from app.services.campaign_sender import run_campaign_sync
+from app.services.chatwoot_webhook_payload import resolve_outbound_payload
 from app.services.inbound_evolution import (
     extract_inbound_text_and_phone,
     normalize_phone_digits,
@@ -369,16 +370,18 @@ async def inbound_campaign_reply(
     if not _contains_interest_keyword(inbound_text, keywords):
         return {"matched": False, "forwarded": False, "reason": "sem_keyword"}
 
-    outbound_payload = {
-        "tenant_id": tenant_id,
-        "campaign_id": campaign.id,
-        "lead_id": lead.id,
-        "lead_name": (lead.name or "").strip() or "Contato",
-        "lead_phone": lead.phone,
-        "lead_message": inbound_text,
-        "matched_keywords": _matched_keyword_list(inbound_text, keywords),
-        "source": "massflow_campaign_reply",
-    }
+    matched_kw = _matched_keyword_list(inbound_text, keywords)
+    lead_display_name = (lead.name or "").strip() or "Contato"
+    outbound_payload = resolve_outbound_payload(
+        content,
+        tenant_id=tenant_id,
+        campaign_id=campaign.id,
+        lead_id=lead.id,
+        lead_name=lead_display_name,
+        lead_phone=lead.phone,
+        inbound_text=inbound_text,
+        matched_keywords=matched_kw,
+    )
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
             resp = await client.post(webhook_url, json=outbound_payload)
