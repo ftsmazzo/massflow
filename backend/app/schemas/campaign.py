@@ -56,6 +56,8 @@ class CampaignInboundReplyItem(BaseModel):
     lead_id: int
     lead_name: str | None = None
     lead_phone: str | None = None
+    evolution_instance_id: int | None = None
+    evolution_instance_label: str | None = None
     message_text: str
     forwarded_to_webhook: bool
     webhook_skip_reason: str | None

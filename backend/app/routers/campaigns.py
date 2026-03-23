@@ -11,7 +11,7 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
@@ -21,6 +21,7 @@ from app.models.user import User
 from app.models.campaign import Campaign
 from app.models.campaign_message import CampaignMessage
 from app.models.campaign_inbound_reply import CampaignInboundReply
+from app.models.evolution_instance import EvolutionInstance
 from app.models.lead import Lead
 from app.models.list import List
 from app.schemas.campaign import (
@@ -32,6 +33,7 @@ from app.schemas.campaign import (
 )
 from app.services.campaign_sender import run_campaign_sync
 from app.services.inbound_evolution import (
+    extract_evolution_instance_name,
     extract_inbound_text_and_phone,
     normalize_inbound_payload,
     normalize_phone_digits,
@@ -91,13 +93,17 @@ def _n8n_webhook_url(content: dict) -> str:
     ).strip()
 
 
-def _latest_sent_message(
+def _resolve_sent_campaign_for_reply(
     db: Session,
     tenant_id: int,
     lead_id: int,
+    evolution_instance_id: int | None,
 ) -> tuple[CampaignMessage | None, Campaign | None]:
-    """Último disparo com status enviado para o lead (atribui a resposta a essa campanha)."""
-    row = (
+    """
+    Último disparo enviado ao lead. Com evolution_instance_id (número que recebeu a resposta
+    no webhook Evolution), restringe ao mesmo envio — necessário com várias instâncias.
+    """
+    base = (
         db.query(CampaignMessage, Campaign)
         .join(Campaign, Campaign.id == CampaignMessage.campaign_id)
         .filter(
@@ -105,7 +111,23 @@ def _latest_sent_message(
             CampaignMessage.lead_id == lead_id,
             CampaignMessage.status == "sent",
         )
-        .order_by(desc(CampaignMessage.sent_at), desc(CampaignMessage.id))
+    )
+    if evolution_instance_id is not None:
+        row = (
+            base.filter(CampaignMessage.evolution_instance_id == evolution_instance_id)
+            .order_by(desc(CampaignMessage.sent_at), desc(CampaignMessage.id))
+            .first()
+        )
+        if row:
+            return row[0], row[1]
+        logger.warning(
+            "campaign_inbound sem CampaignMessage sent para lead_id=%s evolution_instance_id=%s; "
+            "usando ultimo envio em qualquer instancia",
+            lead_id,
+            evolution_instance_id,
+        )
+    row = (
+        base.order_by(desc(CampaignMessage.sent_at), desc(CampaignMessage.id))
         .first()
     )
     if not row:
@@ -135,13 +157,11 @@ async def _inbound_campaign_reply_impl(
     debug: bool,
 ):
     """
-    Evolution envia aqui as mensagens recebidas do lead.
-    Respostas atribuídas a uma campanha são persistidas em `campaign_inbound_replies`.
-    Se a campanha tiver URL de webhook n8n, o MassFlow faz POST (palavras-chave vão em `matched_keywords` para o n8n filtrar).
+    Evolution envia aqui as mensagens recebidas do lead (campo `instance` = nome da instância na API).
+    O disparo atribuído é o último envio **para aquele lead na mesma instância** (vários números = várias instâncias).
+    Com URL de webhook: após checar palavras-chave (se configuradas), POST ao n8n.
 
-    Rotas aceitas (Evolution com webhook_by_events anexa /messages-upsert à URL base):
-    - POST /inbound/{tenant_id}
-    - POST /inbound/{tenant_id}/messages-upsert
+    Rotas: POST /inbound/{tenant_id} e .../messages-upsert (webhook_by_events).
     """
     try:
         payload_raw = await request.json()
@@ -179,6 +199,26 @@ async def _inbound_campaign_reply_impl(
 
     inbound_text, inbound_phone = extracted
 
+    ev_instance_name = extract_evolution_instance_name(payload_raw)
+    evolution_instance_row: EvolutionInstance | None = None
+    if ev_instance_name:
+        evolution_instance_row = (
+            db.query(EvolutionInstance)
+            .filter(
+                EvolutionInstance.tenant_id == tenant_id,
+                func.lower(EvolutionInstance.name) == ev_instance_name.lower(),
+            )
+            .first()
+        )
+        if not evolution_instance_row:
+            logger.warning(
+                "campaign_inbound instancia Evolution nao cadastrada no tenant: name=%s tenant_id=%s",
+                ev_instance_name,
+                tenant_id,
+            )
+
+    ev_instance_id: int | None = evolution_instance_row.id if evolution_instance_row else None
+
     tenant_leads = db.query(Lead).filter(Lead.tenant_id == tenant_id).all()
     lead = next((l for l in tenant_leads if phones_match_for_lead(inbound_phone, l.phone)), None)
     if not lead:
@@ -196,28 +236,45 @@ async def _inbound_campaign_reply_impl(
     lead.last_response_at = datetime.utcnow()
     db.commit()
 
-    latest_msg, campaign = _latest_sent_message(db, tenant_id, lead.id)
+    latest_msg, campaign = _resolve_sent_campaign_for_reply(db, tenant_id, lead.id, ev_instance_id)
     if not latest_msg or not campaign:
         logger.info(
-            "campaign_inbound tenant_id=%s reason=sem_disparo_previo lead_id=%s",
+            "campaign_inbound tenant_id=%s reason=sem_disparo_previo lead_id=%s ev_instance_id=%s",
             tenant_id,
             lead.id,
+            ev_instance_id,
         )
         return {"stored": False, "matched": False, "forwarded": False, "reason": "sem_disparo_previo"}
+
+    logger.info(
+        "campaign_inbound atribuido tenant_id=%s campaign_id=%s lead_id=%s evolution_instance_id=%s ev_instance_name=%s",
+        tenant_id,
+        campaign.id,
+        lead.id,
+        ev_instance_id,
+        ev_instance_name,
+    )
 
     content = campaign.content or {}
     webhook_url = _n8n_webhook_url(content)
     keywords = _extract_keywords(content)
     matched_kw = _matched_keyword_list(inbound_text, keywords) if keywords else []
-
-    forward_n8n = bool(webhook_url)
-    skip_reason: str | None = None if forward_n8n else "sem_webhook"
+    if not webhook_url:
+        forward_n8n = False
+        skip_reason = "sem_webhook"
+    elif keywords and not matched_kw:
+        forward_n8n = False
+        skip_reason = "keyword_sem_match"
+    else:
+        forward_n8n = True
+        skip_reason = None
 
     lead_display_name = (lead.name or "").strip() or "Contato"
     reply_row = CampaignInboundReply(
         tenant_id=tenant_id,
         campaign_id=campaign.id,
         lead_id=lead.id,
+        evolution_instance_id=ev_instance_id,
         message_text=inbound_text,
         forwarded_to_webhook=False,
         webhook_skip_reason=skip_reason if not forward_n8n else None,
@@ -237,6 +294,8 @@ async def _inbound_campaign_reply_impl(
         "matched_keywords": matched_kw,
         "inbound_reply_id": reply_row.id,
         "source": "massflow",
+        "evolution_instance_name": ev_instance_name,
+        "evolution_instance_id": ev_instance_id,
     }
 
     if not forward_n8n:
@@ -346,16 +405,25 @@ def list_inbound_replies(
     """Últimas respostas de leads recebidas (persistidas no MassFlow, com ou sem n8n)."""
     tenant_id = user.tenant_id
     rows = (
-        db.query(CampaignInboundReply, Campaign.name, Lead.name, Lead.phone)
+        db.query(
+            CampaignInboundReply,
+            Campaign.name,
+            Lead.name,
+            Lead.phone,
+            EvolutionInstance.display_name,
+            EvolutionInstance.name,
+        )
         .join(Campaign, Campaign.id == CampaignInboundReply.campaign_id)
         .join(Lead, Lead.id == CampaignInboundReply.lead_id)
+        .outerjoin(EvolutionInstance, EvolutionInstance.id == CampaignInboundReply.evolution_instance_id)
         .filter(CampaignInboundReply.tenant_id == tenant_id)
         .order_by(desc(CampaignInboundReply.created_at))
         .limit(limit)
         .all()
     )
     out: list[CampaignInboundReplyItem] = []
-    for r, campaign_name, lead_name, lead_phone in rows:
+    for r, campaign_name, lead_name, lead_phone, inst_display, inst_name in rows:
+        inst_label = ((inst_display or "").strip() or (inst_name or "").strip() or None)
         out.append(
             CampaignInboundReplyItem(
                 id=r.id,
@@ -365,6 +433,8 @@ def list_inbound_replies(
                 lead_id=r.lead_id,
                 lead_name=lead_name,
                 lead_phone=lead_phone,
+                evolution_instance_id=r.evolution_instance_id,
+                evolution_instance_label=inst_label,
                 message_text=r.message_text,
                 forwarded_to_webhook=r.forwarded_to_webhook,
                 webhook_skip_reason=r.webhook_skip_reason,

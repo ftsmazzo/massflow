@@ -238,6 +238,8 @@ export type CampaignInboundReplyItem = {
   lead_id: number
   lead_name: string | null
   lead_phone: string | null
+  evolution_instance_id: number | null
+  evolution_instance_label: string | null
   message_text: string
   forwarded_to_webhook: boolean
   webhook_skip_reason: string | null

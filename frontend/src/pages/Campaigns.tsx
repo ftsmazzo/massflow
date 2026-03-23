@@ -224,6 +224,7 @@ export default function Campaigns() {
                     <tr>
                       <th>Quando</th>
                       <th>Campanha</th>
+                      <th>Instância</th>
                       <th>Lead</th>
                       <th>Mensagem</th>
                       <th>Enc. n8n</th>
@@ -234,6 +235,7 @@ export default function Campaigns() {
                       <tr key={row.id}>
                         <td>{row.created_at ? new Date(row.created_at).toLocaleString() : '—'}</td>
                         <td>{row.campaign_name ?? `#${row.campaign_id}`}</td>
+                        <td>{row.evolution_instance_label ?? (row.evolution_instance_id != null ? `#${row.evolution_instance_id}` : '—')}</td>
                         <td>
                           {(row.lead_name || '—') + (row.lead_phone ? ` · ${row.lead_phone}` : '')}
                         </td>
@@ -464,7 +466,7 @@ function CampaignForm({
             />
           </label>
           <label>
-            Palavras-chave (opcional — enviadas ao n8n em matched_keywords para você filtrar no fluxo)
+            Palavras-chave (opcional — obrigatórias no texto para disparar o n8n; vão também em matched_keywords)
             <input
               value={responseKeywords}
               onChange={(e) => setResponseKeywords(e.target.value)}
@@ -719,7 +721,7 @@ function CampaignEditForm({
               />
             </label>
             <label>
-              Palavras-chave (opcional — vão no JSON para o n8n em matched_keywords)
+              Palavras-chave (opcional — se preenchidas, o n8n só é chamado se alguma aparecer na resposta)
               <input
                 value={responseKeywords}
                 onChange={(e) => setResponseKeywords(e.target.value)}

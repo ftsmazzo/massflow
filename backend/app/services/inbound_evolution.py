@@ -118,6 +118,27 @@ def normalize_inbound_payload(raw: Any) -> dict[str, Any] | None:
     return p
 
 
+def extract_evolution_instance_name(raw: Any) -> str | None:
+    """
+    Evolution (webhook.controller) envia: event, instance (nome na API), data, ...
+    Usado para vincular a resposta ao disparo feito pela mesma instância (número).
+    """
+    p = normalize_inbound_payload(raw)
+    if isinstance(p, dict):
+        for key in ("instance", "instanceName"):
+            v = p.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    if isinstance(raw, dict):
+        for key in ("instance", "instanceName"):
+            v = raw.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    if isinstance(raw, list) and len(raw) > 0 and isinstance(raw[0], dict):
+        return extract_evolution_instance_name(raw[0])
+    return None
+
+
 def _extract_from_sender_content_body(payload: dict[str, Any]) -> tuple[str, str] | None:
     """Formato alternativo: body.content (texto) + body.sender (telefone/identifier)."""
     b = payload.get("body")

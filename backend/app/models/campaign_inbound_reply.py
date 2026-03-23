@@ -15,6 +15,8 @@ class CampaignInboundReply(Base):
     tenant_id = Column(Integer, ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     campaign_id = Column(Integer, ForeignKey("campaigns.id", ondelete="CASCADE"), nullable=False, index=True)
     lead_id = Column(Integer, ForeignKey("leads.id", ondelete="CASCADE"), nullable=False, index=True)
+    # Instância Evolution (número) em que a resposta foi recebida — alinhado ao CampaignMessage.evolution_instance_id do disparo
+    evolution_instance_id = Column(Integer, ForeignKey("evolution_instances.id", ondelete="SET NULL"), nullable=True, index=True)
 
     message_text = Column(Text, nullable=False)
     forwarded_to_webhook = Column(Boolean, nullable=False, default=False)
