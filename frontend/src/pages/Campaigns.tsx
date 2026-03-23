@@ -301,6 +301,12 @@ function CampaignEditForm({
   const [contentMediaMimetype, setContentMediaMimetype] = useState((content.media_mimetype as string) || '')
   const [contentMediaFilename, setContentMediaFilename] = useState((content.media_filename as string) || '')
   const [contentCaption, setContentCaption] = useState((content.caption as string) || '')
+  const [responseWebhookUrl, setResponseWebhookUrl] = useState((content.response_webhook_url as string) || '')
+  const [responseKeywords, setResponseKeywords] = useState(
+    Array.isArray(content.response_keywords)
+      ? (content.response_keywords as string[]).join(', ')
+      : ((content.response_keywords as string) || '')
+  )
   const [useGlobalShielding, setUseGlobalShielding] = useState(campaign.use_global_shielding)
   const [instanceIds, setInstanceIds] = useState<number[]>(campaign.instance_ids || [])
   const [loading, setLoading] = useState(false)
@@ -329,6 +335,17 @@ function CampaignEditForm({
       contentPayload.media_path = mediaPath
       contentPayload.media_mimetype = mediaMimetype
       contentPayload.media_filename = mediaFilename
+    }
+    const normalizedWebhook = responseWebhookUrl.trim()
+    const normalizedKeywords = responseKeywords
+      .split(',')
+      .map((k) => k.trim())
+      .filter(Boolean)
+    if (normalizedWebhook) {
+      contentPayload.response_webhook_url = normalizedWebhook
+    }
+    if (normalizedKeywords.length > 0) {
+      contentPayload.response_keywords = normalizedKeywords
     }
     const payload: Record<string, unknown> = {
       name: name.trim(),
@@ -484,6 +501,25 @@ function CampaignEditForm({
                 </label>
               </>
             )}
+            <label>
+              Webhook para resposta com interesse (IA/Chatwoot)
+              <input
+                value={responseWebhookUrl}
+                onChange={(e) => setResponseWebhookUrl(e.target.value)}
+                placeholder="https://seu-n8n/webhook/tenant_x/agent_y"
+              />
+            </label>
+            <label>
+              Palavras-chave de interesse (separadas por vírgula)
+              <input
+                value={responseKeywords}
+                onChange={(e) => setResponseKeywords(e.target.value)}
+                placeholder="tenho interesse, quero saber mais, preço"
+              />
+            </label>
+            <p className="campaigns-form-hint">
+              Quando o lead responder com alguma dessas palavras, o MassFlow envia nome, telefone e mensagem para o webhook configurado.
+            </p>
           </fieldset>
           <label className="campaigns-check">
             <input

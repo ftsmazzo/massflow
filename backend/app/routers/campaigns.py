@@ -3,16 +3,21 @@ Campanhas: CRUD, criação, upload de mídia (arquivo anexado) e disparo em back
 """
 import asyncio
 import re
+from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.auth import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.models.campaign import Campaign
+from app.models.campaign_message import CampaignMessage
+from app.models.lead import Lead
 from app.models.list import List
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse
 from app.services.campaign_sender import run_campaign_sync
@@ -33,6 +38,70 @@ EXT_FROM_MIME = {
 }
 
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
+
+
+def _normalize_phone(value: str | None) -> str:
+    return "".join(c for c in str(value or "") if c.isdigit())
+
+
+def _extract_text_from_inbound(payload: dict) -> str:
+    if isinstance(payload.get("text"), str):
+        return payload["text"]
+    if isinstance(payload.get("message"), str):
+        return payload["message"]
+    msg = payload.get("data") if isinstance(payload.get("data"), dict) else payload
+    if not isinstance(msg, dict):
+        return ""
+    # Evolution costuma enviar em data.message.conversation ou extendedTextMessage.text
+    message = msg.get("message") if isinstance(msg.get("message"), dict) else {}
+    if isinstance(message.get("conversation"), str):
+        return message["conversation"]
+    etm = message.get("extendedTextMessage")
+    if isinstance(etm, dict) and isinstance(etm.get("text"), str):
+        return etm["text"]
+    return ""
+
+
+def _extract_phone_from_inbound(payload: dict) -> str:
+    candidates: list[str] = []
+    for key in ("phone", "number", "from", "remoteJid"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            candidates.append(value)
+    data = payload.get("data")
+    if isinstance(data, dict):
+        for key in ("phone", "number", "from", "remoteJid"):
+            value = data.get(key)
+            if isinstance(value, str):
+                candidates.append(value)
+        key_obj = data.get("key")
+        if isinstance(key_obj, dict):
+            remote_jid = key_obj.get("remoteJid")
+            if isinstance(remote_jid, str):
+                candidates.append(remote_jid)
+    for value in candidates:
+        if "@" in value:
+            value = value.split("@", 1)[0]
+        normalized = _normalize_phone(value)
+        if normalized:
+            return normalized
+    return ""
+
+
+def _extract_keywords(content: dict) -> list[str]:
+    raw = content.get("response_keywords")
+    if isinstance(raw, list):
+        return [str(k).strip().lower() for k in raw if str(k).strip()]
+    if isinstance(raw, str):
+        return [k.strip().lower() for k in raw.split(",") if k.strip()]
+    return []
+
+
+def _contains_interest_keyword(text: str, keywords: list[str]) -> bool:
+    txt = (text or "").strip().lower()
+    if not txt or not keywords:
+        return False
+    return any(k in txt for k in keywords)
 
 
 @router.get("", response_model=list[CampaignResponse])
@@ -249,6 +318,92 @@ async def start_campaign(
         pass  # legenda opcional
     asyncio.create_task(asyncio.to_thread(run_campaign_sync, campaign_id, tenant_id))
     return {"message": "Campanha em disparo."}
+
+
+@router.post("/inbound/{tenant_id}")
+async def inbound_campaign_reply(tenant_id: int, request: Request, db: Annotated[Session, Depends(get_db)]):
+    """
+    Recebe resposta inbound (ex.: Evolution webhook) e encaminha para webhook IA
+    quando a mensagem do lead contém palavra-chave de interesse configurada.
+    """
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Payload JSON inválido.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="Payload deve ser objeto JSON.")
+
+    inbound_text = _extract_text_from_inbound(payload)
+    inbound_phone = _extract_phone_from_inbound(payload)
+    if not inbound_text or not inbound_phone:
+        return {"matched": False, "forwarded": False, "reason": "sem_texto_ou_telefone"}
+
+    lead = db.query(Lead).filter(
+        Lead.tenant_id == tenant_id,
+        Lead.phone == inbound_phone,
+    ).first()
+    if not lead:
+        # Fallback para leads salvos com máscara/formatação no telefone.
+        tenant_leads = db.query(Lead).filter(Lead.tenant_id == tenant_id).all()
+        lead = next((l for l in tenant_leads if _normalize_phone(l.phone) == inbound_phone), None)
+    if not lead:
+        return {"matched": False, "forwarded": False, "reason": "lead_nao_encontrado"}
+    lead.last_response_at = datetime.utcnow()
+    db.commit()
+
+    latest_msg = (
+        db.query(CampaignMessage)
+        .join(Campaign, Campaign.id == CampaignMessage.campaign_id)
+        .filter(
+            Campaign.tenant_id == tenant_id,
+            CampaignMessage.lead_id == lead.id,
+            CampaignMessage.status == "sent",
+        )
+        .order_by(desc(CampaignMessage.sent_at), desc(CampaignMessage.id))
+        .first()
+    )
+    if not latest_msg:
+        return {"matched": False, "forwarded": False, "reason": "sem_disparo_previo"}
+
+    campaign = db.query(Campaign).filter(
+        Campaign.id == latest_msg.campaign_id,
+        Campaign.tenant_id == tenant_id,
+    ).first()
+    if not campaign:
+        return {"matched": False, "forwarded": False, "reason": "campanha_nao_encontrada"}
+
+    content = campaign.content or {}
+    webhook_url = str(content.get("response_webhook_url") or "").strip()
+    keywords = _extract_keywords(content)
+    if not webhook_url:
+        return {"matched": False, "forwarded": False, "reason": "webhook_nao_configurado"}
+    if not keywords:
+        return {"matched": False, "forwarded": False, "reason": "keywords_nao_configuradas"}
+    if not _contains_interest_keyword(inbound_text, keywords):
+        return {"matched": False, "forwarded": False, "reason": "sem_keyword"}
+
+    outbound_payload = {
+        "tenant_id": tenant_id,
+        "campaign_id": campaign.id,
+        "lead_id": lead.id,
+        "lead_name": (lead.name or "").strip() or "Contato",
+        "lead_phone": lead.phone,
+        "lead_message": inbound_text,
+        "matched_keywords": [k for k in keywords if k in inbound_text.lower()],
+        "source": "massflow_campaign_reply",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            resp = await client.post(webhook_url, json=outbound_payload)
+            resp.raise_for_status()
+    except Exception as e:
+        return {
+            "matched": True,
+            "forwarded": False,
+            "reason": "erro_ao_enviar_webhook",
+            "error": str(e)[:500],
+        }
+    return {"matched": True, "forwarded": True}
 
 
 @router.delete("/{campaign_id}", status_code=204)
