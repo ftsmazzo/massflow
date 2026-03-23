@@ -80,6 +80,33 @@ def _n8n_webhook_url(content: dict) -> str:
     ).strip()
 
 
+def _latest_sent_message_with_webhook(
+    db: Session,
+    tenant_id: int,
+    lead_id: int,
+) -> tuple[CampaignMessage | None, Campaign | None]:
+    """
+    Último disparo enviado ao lead cuja campanha tenha URL de webhook.
+    Evita usar só o último envio globalmente: se a campanha mais recente não tiver webhook,
+    ainda assim encontra uma campanha anterior que tenha (ex.: vários testes).
+    """
+    rows = (
+        db.query(CampaignMessage, Campaign)
+        .join(Campaign, Campaign.id == CampaignMessage.campaign_id)
+        .filter(
+            Campaign.tenant_id == tenant_id,
+            CampaignMessage.lead_id == lead_id,
+            CampaignMessage.status == "sent",
+        )
+        .order_by(desc(CampaignMessage.sent_at), desc(CampaignMessage.id))
+        .all()
+    )
+    for cm, camp in rows:
+        if _n8n_webhook_url(camp.content or {}):
+            return cm, camp
+    return None, None
+
+
 @router.get("", response_model=list[CampaignResponse])
 def list_campaigns(
     user: Annotated[User, Depends(get_current_user)],
@@ -160,29 +187,42 @@ async def inbound_campaign_reply(
     lead.last_response_at = datetime.utcnow()
     db.commit()
 
-    latest_msg = (
-        db.query(CampaignMessage)
-        .join(Campaign, Campaign.id == CampaignMessage.campaign_id)
-        .filter(
-            Campaign.tenant_id == tenant_id,
-            CampaignMessage.lead_id == lead.id,
-            CampaignMessage.status == "sent",
-        )
-        .order_by(desc(CampaignMessage.sent_at), desc(CampaignMessage.id))
-        .first()
-    )
+    latest_msg, campaign = _latest_sent_message_with_webhook(db, tenant_id, lead.id)
     if not latest_msg:
+        any_sent = (
+            db.query(CampaignMessage)
+            .join(Campaign, Campaign.id == CampaignMessage.campaign_id)
+            .filter(
+                Campaign.tenant_id == tenant_id,
+                CampaignMessage.lead_id == lead.id,
+                CampaignMessage.status == "sent",
+            )
+            .first()
+        )
+        if not any_sent:
+            logger.info(
+                "campaign_inbound tenant_id=%s reason=sem_disparo_previo lead_id=%s",
+                tenant_id,
+                lead.id,
+            )
+            return {"matched": False, "forwarded": False, "reason": "sem_disparo_previo"}
         logger.info(
-            "campaign_inbound tenant_id=%s reason=sem_disparo_previo lead_id=%s",
+            "campaign_inbound tenant_id=%s reason=webhook_nao_configurado lead_id=%s (há disparo mas nenhuma campanha com URL de webhook)",
             tenant_id,
             lead.id,
         )
-        return {"matched": False, "forwarded": False, "reason": "sem_disparo_previo"}
+        out = {
+            "matched": False,
+            "forwarded": False,
+            "reason": "webhook_nao_configurado",
+            "hint": "Preencha a URL do webhook em pelo menos uma campanha que tenha disparado para este lead (a última campanha pode ser só teste sem URL).",
+        }
+        if debug:
+            out["debug"] = {
+                "detail": "Existem CampaignMessage sent, mas nenhuma campanha associada tem campaign_webhook_url.",
+            }
+        return out
 
-    campaign = db.query(Campaign).filter(
-        Campaign.id == latest_msg.campaign_id,
-        Campaign.tenant_id == tenant_id,
-    ).first()
     if not campaign:
         logger.warning("campaign_inbound tenant_id=%s reason=campanha_nao_encontrada", tenant_id)
         return {"matched": False, "forwarded": False, "reason": "campanha_nao_encontrada"}
@@ -191,8 +231,8 @@ async def inbound_campaign_reply(
     webhook_url = _n8n_webhook_url(content)
     keywords = _extract_keywords(content)
     if not webhook_url:
-        logger.info(
-            "campaign_inbound tenant_id=%s reason=webhook_nao_configurado campaign_id=%s",
+        logger.warning(
+            "campaign_inbound tenant_id=%s campaign_id=%s webhook_vazio_apos_filtro",
             tenant_id,
             campaign.id,
         )

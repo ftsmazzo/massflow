@@ -70,6 +70,6 @@ Filtro por palavra-chave no n8n: use `matched_keywords` ou o texto em `lead_mess
 1. **URL do webhook** preenchida na campanha (só usada ao encaminhar **respostas** do lead).
 2. **Respostas:** webhook da **Evolution** apontando para `POST .../api/campaigns/inbound/<TENANT_ID>` (`messages.upsert`). Sem isso não há `campaign_reply_received`.
 3. **`?debug=true`** no inbound quando não extrai texto/telefone (`sem_texto_ou_telefone`).
-4. **Motivos** na resposta JSON do inbound: `lead_nao_encontrado`, `sem_disparo_previo` (lead sem envio de campanha antes), `webhook_nao_configurado`, `erro_ao_enviar_webhook`.
+4. **Motivos** na resposta JSON do inbound: `lead_nao_encontrado`, `sem_disparo_previo` (nunca houve disparo para o lead), `webhook_nao_configurado` (houve disparo mas **nenhuma** campanha com URL de webhook — comum com várias campanhas de teste: a última sem URL bloqueava antes; agora o MassFlow usa o disparo mais recente **que tenha** webhook), `erro_ao_enviar_webhook`.
 
 Documentação Evolution: https://doc.evolution-api.com/v2/en/configuration/webhooks

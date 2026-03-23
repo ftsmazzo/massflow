@@ -25,6 +25,18 @@ def _text_from_inner_message(msg_obj: dict[str, Any]) -> str:
     etm = msg_obj.get("extendedTextMessage")
     if isinstance(etm, dict) and isinstance(etm.get("text"), str):
         return etm["text"]
+    btn = msg_obj.get("buttonsResponseMessage")
+    if isinstance(btn, dict):
+        t = btn.get("selectedDisplayText") or btn.get("selectedButtonId")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+    lst = msg_obj.get("listResponseMessage")
+    if isinstance(lst, dict):
+        ssr = lst.get("singleSelectReply")
+        row_id = ssr.get("selectedRowId") if isinstance(ssr, dict) else None
+        t = lst.get("title") or row_id
+        if isinstance(t, str) and t.strip():
+            return t.strip()
     for key in ("imageMessage", "videoMessage", "documentMessage", "audioMessage"):
         sub = msg_obj.get(key)
         if isinstance(sub, dict):
@@ -158,6 +170,9 @@ def extract_inbound_text_and_phone(raw: Any) -> tuple[str, str] | None:
         if not phone and isinstance(block.get("remoteJid"), str):
             rj = block["remoteJid"]
             phone = normalize_phone_digits(rj.split("@", 1)[0]) if "@" in rj else normalize_phone_digits(rj)
+        if not phone and isinstance(block.get("participant"), str):
+            pj = block["participant"]
+            phone = normalize_phone_digits(pj.split("@", 1)[0]) if "@" in pj else normalize_phone_digits(pj)
 
         inner = block.get("message")
         text = ""
