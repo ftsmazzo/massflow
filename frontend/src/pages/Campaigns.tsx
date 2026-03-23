@@ -1,13 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import {
-  campaignsApi,
-  listsApi,
-  instancesApi,
-  type CampaignItem,
-  type ListItem,
-  type Instance,
-  type WebhookSetupInfo,
-} from '../services/api'
+import { campaignsApi, listsApi, instancesApi, type CampaignItem, type ListItem, type Instance } from '../services/api'
 import { getApiErrorMessage } from '../services/api'
 import './Campaigns.css'
 
@@ -42,18 +34,6 @@ export default function Campaigns() {
   const [instances, setInstances] = useState<Instance[]>([])
   const [startingId, setStartingId] = useState<number | null>(null)
   const [pollingId, setPollingId] = useState<number | null>(null)
-  const [integrationOpen, setIntegrationOpen] = useState(false)
-  const [webhookSetup, setWebhookSetup] = useState<WebhookSetupInfo | null>(null)
-
-  function loadWebhookSetup() {
-    campaignsApi
-      .webhookSetup()
-      .then((r) => {
-        setWebhookSetup(r.data)
-        setIntegrationOpen(true)
-      })
-      .catch(() => setError('Não foi possível carregar a URL de integração.'))
-  }
 
   function load() {
     setLoading(true)
@@ -124,35 +104,10 @@ export default function Campaigns() {
           <h1>Campanhas</h1>
           <p className="campaigns-subtitle">Crie e gerencie disparos em massa (lista, conteúdo, blindagem)</p>
         </div>
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          <button type="button" className="campaigns-btn" onClick={loadWebhookSetup}>
-            Integração Evolution → n8n
-          </button>
-          <button type="button" className="campaigns-btn primary" onClick={() => setShowForm(true)}>
-            Nova campanha
-          </button>
-        </div>
+        <button type="button" className="campaigns-btn primary" onClick={() => setShowForm(true)}>
+          Nova campanha
+        </button>
       </header>
-
-      {integrationOpen && webhookSetup && (
-        <div className="campaigns-error-banner" style={{ background: 'var(--card-bg, #1e293b)', color: 'inherit', textAlign: 'left' }}>
-          <strong>Webhook na Evolution (obrigatório para acionar o n8n após resposta)</strong>
-          <p style={{ margin: '0.5rem 0' }}>
-            POST <code>{webhookSetup.inbound_url ?? webhookSetup.inbound_path}</code>
-            {' — '}
-            evento <code>{webhookSetup.evolution.event}</code>
-          </p>
-          {!webhookSetup.public_base_url_configured && (
-            <p style={{ margin: 0 }}>
-              Defina a variável <code>PUBLIC_BASE_URL</code> no backend (ex.: <code>https://api.seudominio.com</code>) para exibir a URL completa.
-            </p>
-          )}
-          <p style={{ margin: '0.5rem 0 0', fontSize: '0.9rem' }}>{webhookSetup.chatwoot.note}</p>
-          <button type="button" className="campaigns-btn-link" onClick={() => setIntegrationOpen(false)}>
-            Fechar
-          </button>
-        </div>
-      )}
 
       {error && <div className="campaigns-error-banner">{error}</div>}
 
@@ -346,29 +301,9 @@ function CampaignEditForm({
   const [contentMediaMimetype, setContentMediaMimetype] = useState((content.media_mimetype as string) || '')
   const [contentMediaFilename, setContentMediaFilename] = useState((content.media_filename as string) || '')
   const [contentCaption, setContentCaption] = useState((content.caption as string) || '')
-  const [responseWebhookUrl, setResponseWebhookUrl] = useState((content.response_webhook_url as string) || '')
-  const [responseKeywords, setResponseKeywords] = useState(
-    Array.isArray(content.response_keywords)
-      ? (content.response_keywords as string[]).join(', ')
-      : ((content.response_keywords as string) || '')
+  const [campaignWebhookUrl, setCampaignWebhookUrl] = useState(
+    String((content.campaign_webhook_url as string) || (content.response_webhook_url as string) || '')
   )
-  const [responseWebhookFormat, setResponseWebhookFormat] = useState<'massflow' | 'chatwoot'>(() => {
-    const f = content.response_webhook_format as string | undefined
-    if (f === 'massflow') return 'massflow'
-    return 'chatwoot'
-  })
-  const cwMeta = (content.response_webhook_chatwoot as {
-    account?: { id?: number; name?: string }
-    inbox?: { id?: number; name?: string }
-  }) || {}
-  const [cwAccountId, setCwAccountId] = useState(
-    cwMeta.account?.id != null ? String(cwMeta.account.id) : ''
-  )
-  const [cwAccountName, setCwAccountName] = useState(cwMeta.account?.name ?? '')
-  const [cwInboxId, setCwInboxId] = useState(
-    cwMeta.inbox?.id != null ? String(cwMeta.inbox.id) : ''
-  )
-  const [cwInboxName, setCwInboxName] = useState(cwMeta.inbox?.name ?? '')
   const [useGlobalShielding, setUseGlobalShielding] = useState(campaign.use_global_shielding)
   const [instanceIds, setInstanceIds] = useState<number[]>(campaign.instance_ids || [])
   const [loading, setLoading] = useState(false)
@@ -398,35 +333,9 @@ function CampaignEditForm({
       contentPayload.media_mimetype = mediaMimetype
       contentPayload.media_filename = mediaFilename
     }
-    const normalizedWebhook = responseWebhookUrl.trim()
-    const normalizedKeywords = responseKeywords
-      .split(',')
-      .map((k) => k.trim())
-      .filter(Boolean)
-    if (normalizedWebhook) {
-      contentPayload.response_webhook_url = normalizedWebhook
-    }
-    if (normalizedKeywords.length > 0) {
-      contentPayload.response_keywords = normalizedKeywords
-    }
-    contentPayload.response_webhook_format = responseWebhookFormat
-    if (responseWebhookFormat === 'chatwoot') {
-      const o: Record<string, { id: number; name: string }> = {}
-      if (cwAccountId.trim() || cwAccountName.trim()) {
-        o.account = {
-          id: Number.parseInt(cwAccountId, 10) || 1,
-          name: cwAccountName.trim() || 'MassFlow',
-        }
-      }
-      if (cwInboxId.trim() || cwInboxName.trim()) {
-        o.inbox = {
-          id: Number.parseInt(cwInboxId, 10) || 0,
-          name: cwInboxName.trim() || 'MassFlow',
-        }
-      }
-      if (Object.keys(o).length > 0) {
-        contentPayload.response_webhook_chatwoot = o
-      }
+    const w = campaignWebhookUrl.trim()
+    if (w) {
+      contentPayload.campaign_webhook_url = w
     }
     const payload: Record<string, unknown> = {
       name: name.trim(),
@@ -583,74 +492,17 @@ function CampaignEditForm({
               </>
             )}
             <label>
-              Webhook para resposta com interesse (IA/Chatwoot)
+              Webhook n8n (envio inicial — opcional)
               <input
-                value={responseWebhookUrl}
-                onChange={(e) => setResponseWebhookUrl(e.target.value)}
-                placeholder="https://seu-n8n/webhook/tenant_x/agent_y"
-              />
-            </label>
-            <label>
-              Formato do corpo enviado ao n8n
-              <select
-                value={responseWebhookFormat}
-                onChange={(e) => setResponseWebhookFormat(e.target.value as 'massflow' | 'chatwoot')}
-              >
-                <option value="chatwoot">Chatwoot (message_created / incoming — igual ao fluxo com Chatwoot)</option>
-                <option value="massflow">MassFlow (JSON simples: lead_name, lead_phone, lead_message…)</option>
-              </select>
-            </label>
-            {responseWebhookFormat === 'chatwoot' && (
-              <fieldset className="campaigns-fieldset">
-                <legend>Opcional — alinhar conta/inbox ao Chatwoot</legend>
-                <label>
-                  Account ID
-                  <input
-                    type="number"
-                    value={cwAccountId}
-                    onChange={(e) => setCwAccountId(e.target.value)}
-                    placeholder="ex: 1"
-                  />
-                </label>
-                <label>
-                  Nome da conta
-                  <input
-                    value={cwAccountName}
-                    onChange={(e) => setCwAccountName(e.target.value)}
-                    placeholder="ex: Fabrica IA"
-                  />
-                </label>
-                <label>
-                  Inbox ID
-                  <input
-                    type="number"
-                    value={cwInboxId}
-                    onChange={(e) => setCwInboxId(e.target.value)}
-                    placeholder="ex: 119"
-                  />
-                </label>
-                <label>
-                  Nome do inbox
-                  <input
-                    value={cwInboxName}
-                    onChange={(e) => setCwInboxName(e.target.value)}
-                    placeholder="ex: Assistente LVA"
-                  />
-                </label>
-              </fieldset>
-            )}
-            <label>
-              Palavras-chave de interesse (separadas por vírgula)
-              <input
-                value={responseKeywords}
-                onChange={(e) => setResponseKeywords(e.target.value)}
-                placeholder="tenho interesse, quero saber mais, preço"
+                value={campaignWebhookUrl}
+                onChange={(e) => setCampaignWebhookUrl(e.target.value)}
+                placeholder="https://seu-n8n/webhook/..."
               />
             </label>
             <p className="campaigns-form-hint">
-              Quando o lead responder com alguma dessas palavras, o MassFlow envia o POST para o webhook do n8n (acima). No formato Chatwoot, o JSON segue o padrão <code>event: message_created</code> e <code>message_type: incoming</code>, como quando o Chatwoot aciona o mesmo workflow.
-              Na Evolution API, configure o webhook da instância para POST em{' '}
-              <code>/api/campaigns/inbound/SEU_TENANT_ID</code> com o evento de mensagens recebidas (ex.: MESSAGES_UPSERT) — não use a URL do n8n na Evolution; o MassFlow é quem encaminha ao agente.
+              Após cada mensagem enviada com sucesso ao lead, o MassFlow faz <code>POST</code> nessa URL com JSON simples
+              (<code>event</code>, <code>campaign_id</code>, <code>lead_name</code>, <code>lead_phone</code>, <code>message_text</code>, etc.).
+              Use o mesmo fluxo do Chatwoot/agente quando o lead já estiver conversando com o número do agente.
             </p>
           </fieldset>
           <label className="campaigns-check">

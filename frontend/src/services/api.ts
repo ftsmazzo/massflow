@@ -230,19 +230,8 @@ export type CampaignItem = {
   updated_at: string | null
 }
 
-export type WebhookSetupInfo = {
-  tenant_id: number
-  inbound_path: string
-  inbound_url: string | null
-  public_base_url_configured: boolean
-  evolution: { method: string; url: string; event: string; note: string }
-  chatwoot: { note: string }
-}
-
 export const campaignsApi = {
   list: (params?: { status?: string }) => api.get<CampaignItem[]>('/api/campaigns', { params }),
-  /** URL pública para configurar webhook da Evolution (GET autenticado). */
-  webhookSetup: () => api.get<WebhookSetupInfo>('/api/campaigns/webhook-setup'),
   get: (id: number) => api.get<CampaignItem>(`/api/campaigns/${id}`),
   create: (data: {
     name: string

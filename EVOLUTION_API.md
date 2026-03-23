@@ -38,34 +38,23 @@ Header: `apikey` com a chave da API.
 
 - `backend/app/services/evolution.py` — chamadas à Evolution API; comentário no topo do arquivo indica versão e links da doc.
 
-## Webhook de mensagens recebidas (resposta do lead → IA)
+## Webhook n8n (envio inicial — opcional)
 
-O disparo de campanha **não** envia automaticamente as respostas do WhatsApp para o seu n8n/Chatwoot. Para o MassFlow qualificar a resposta (palavras-chave) e **encaminhar** nome, telefone e mensagem ao webhook do agente:
+Na campanha, o campo **Webhook n8n (envio inicial)** aceita a URL do seu workflow n8n.
 
-1. Na **Evolution API**, configure o webhook da instância com:
-   - **URL:** `https://<sua-api-massflow>/api/campaigns/inbound/<TENANT_ID>`
-   - **Evento:** `MESSAGES_UPSERT` (ou equivalente `messages.upsert` na sua versão)
-   - Método **POST** com JSON (como a Evolution envia por padrão)
+Após **cada** mensagem enviada com sucesso ao lead (WhatsApp), o MassFlow faz `POST` nessa URL com JSON simples, por exemplo:
 
-2. No **formulário da campanha** no MassFlow:
-   - **Webhook para resposta com interesse** = URL do **agente** (n8n), ex.: `https://.../webhook/tenant_x/agent_y`
-   - **Palavras-chave** = termos que indicam interesse
+| Campo | Descrição |
+|-------|-----------|
+| `event` | `campaign_message_sent` |
+| `tenant_id`, `campaign_id`, `campaign_name` | Identificação da campanha |
+| `lead_id`, `lead_name`, `lead_phone` | Lead |
+| `message_text` | Texto ou legenda enviada |
+| `content_type` | `text`, `image`, etc. |
+| `evolution_instance_id`, `evolution_instance_name` | Instância usada |
+| `whatsapp_message_id` | ID da mensagem na Evolution (quando disponível) |
+| `source` | `massflow` |
 
-Fluxo: **Evolution → MassFlow** (`/api/campaigns/inbound/...`) → se bater palavra-chave → **POST** para o webhook do agente.
+Falha no webhook **não** cancela o disparo. Logs: `campaign_webhook_ok` / `campaign_webhook_falhou` no backend.
 
-**Importante:** a URL que você coloca na Evolution **não** é a do n8n; é a do backend MassFlow acima. O n8n só recebe o encaminhamento depois que o MassFlow processar.
-
-**Diagnóstico:** chame o endpoint com `?debug=1` em ambiente de teste; a resposta JSON inclui dicas se o telefone ou o formato do payload não bateram.
-
-Documentação Evolution sobre webhooks: https://doc.evolution-api.com/v2/en/configuration/webhooks
-
-### Formato do POST para o n8n (webhook do agente)
-
-Na campanha, o campo **Formato do corpo enviado ao n8n** define o JSON:
-
-| Valor | Uso |
-|-------|-----|
-| **Chatwoot** (padrão) | Corpo no estilo webhook Chatwoot: `event: message_created`, `message_type: incoming`, `content`, `sender.phone_number`, `sender.identifier`, `conversation`, etc. Compatível com workflows que já leem o mesmo formato do Chatwoot. Metadados do MassFlow ficam em `additional_attributes.massflow`. |
-| **MassFlow** | Objeto simples: `lead_name`, `lead_phone`, `lead_message`, `matched_keywords`, etc. |
-
-Opcionalmente, em **Chatwoot**, preencha Account ID / Nome e Inbox ID / Nome para alinhar `account` e `inbox` ao seu Chatwoot (como no payload que você copiou).
+Respostas do lead e continução da conversa costumam ser tratadas pelo **Chatwoot** (Evolution integrado) e pelo seu n8n; não é necessário webhook na Evolution apontando para o MassFlow para esse fluxo.
