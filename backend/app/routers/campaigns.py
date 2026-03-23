@@ -23,7 +23,6 @@ from app.models.lead import Lead
 from app.models.list import List
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse
 from app.services.campaign_sender import run_campaign_sync
-from app.config import settings
 from app.services.inbound_evolution import (
     extract_inbound_text_and_phone,
     normalize_inbound_payload,
@@ -264,22 +263,22 @@ async def inbound_campaign_reply(
 
 @router.get("/inbound-config")
 def get_inbound_webhook_config(
+    request: Request,
     user: Annotated[User, Depends(get_current_user)],
 ):
     """
-    URL do webhook que a Evolution (ou n8n na frente) deve chamar ao receber mensagem do lead.
-    Defina PUBLIC_BASE_URL no .env para obter a URL absoluta (https://...).
+    URL do webhook que a Evolution deve chamar ao receber mensagem do lead.
+    A URL absoluta vem do próprio pedido (host/scheme); atrás de proxy use headers corretos (ex.: --proxy-headers no uvicorn).
     """
     tenant_id = user.tenant_id
     path = f"/api/campaigns/inbound/{tenant_id}"
-    base = (settings.PUBLIC_BASE_URL or "").rstrip("/")
-    full_url = f"{base}{path}" if base else None
+    base = str(request.base_url).rstrip("/")
+    full_url = f"{base}{path}"
     return {
         "tenant_id": tenant_id,
         "inbound_webhook_path": path,
         "inbound_webhook_url": full_url,
-        "public_base_url_configured": bool(base),
-        "hint": "Na Evolution, Webhook URL = inbound_webhook_url (ou sua URL pública + path). Evento: messages.upsert.",
+        "hint": "Na Evolution, Webhook URL = inbound_webhook_url. Evento: messages.upsert.",
     }
 
 

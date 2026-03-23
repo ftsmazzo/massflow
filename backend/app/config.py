@@ -34,9 +34,6 @@ class Settings(BaseSettings):
     # Regex para aceitar origens. Vazio = usa default abaixo (qualquer subdomínio Easypanel).
     CORS_ORIGIN_REGEX: str = os.getenv("CORS_ORIGIN_REGEX", "")
 
-    # URL pública do backend (ex.: https://api.seudominio.com) — usada em hints de webhook inbound
-    PUBLIC_BASE_URL: str = os.getenv("PUBLIC_BASE_URL", "").strip()
-
     # Evolution API (base - instâncias por tenant no DB)
     EVOLUTION_API_URL: str = os.getenv("EVOLUTION_API_URL", "http://localhost:8080")
     EVOLUTION_API_KEY: str = os.getenv("EVOLUTION_API_KEY", "")

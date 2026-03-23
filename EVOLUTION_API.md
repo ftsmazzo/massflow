@@ -61,8 +61,7 @@ O disparo em massa **não** chama o n8n; apenas o fluxo acima, após resposta fi
 
 ### URL exata do webhook
 
-- Defina `PUBLIC_BASE_URL` no `.env` do backend (ex.: `https://api.seudominio.com`).
-- Com login no MassFlow, chame **`GET /api/campaigns/inbound-config`** — a resposta traz `inbound_webhook_path` e `inbound_webhook_url` (URL completa se `PUBLIC_BASE_URL` estiver definido).
+- Com login no MassFlow, chame **`GET /api/campaigns/inbound-config`** (no mesmo host em que a API roda). A resposta traz `inbound_webhook_url` montada a partir do pedido (scheme + host + path). Atrás de proxy reverso, configure repasse de host/proto (ex.: uvicorn com `--proxy-headers`) para a URL sair com `https` correto.
 
 ### Se o n8n não receber nada
 
