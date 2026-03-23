@@ -3,12 +3,13 @@ Campanhas: CRUD, criação, upload de mídia (arquivo anexado) e disparo em back
 """
 import asyncio
 import re
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Annotated
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,11 @@ from app.models.lead import Lead
 from app.models.list import List
 from app.schemas.campaign import CampaignCreate, CampaignUpdate, CampaignResponse
 from app.services.campaign_sender import run_campaign_sync
+from app.services.inbound_evolution import (
+    extract_inbound_text_and_phone,
+    normalize_phone_digits,
+    phones_match_for_lead,
+)
 
 # Pasta de uploads: backend/uploads (criada ao subir; em Docker use volume se quiser persistir)
 BACKEND_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -40,52 +46,10 @@ EXT_FROM_MIME = {
 router = APIRouter(prefix="/campaigns", tags=["Campaigns"])
 
 
-def _normalize_phone(value: str | None) -> str:
-    return "".join(c for c in str(value or "") if c.isdigit())
-
-
-def _extract_text_from_inbound(payload: dict) -> str:
-    if isinstance(payload.get("text"), str):
-        return payload["text"]
-    if isinstance(payload.get("message"), str):
-        return payload["message"]
-    msg = payload.get("data") if isinstance(payload.get("data"), dict) else payload
-    if not isinstance(msg, dict):
-        return ""
-    # Evolution costuma enviar em data.message.conversation ou extendedTextMessage.text
-    message = msg.get("message") if isinstance(msg.get("message"), dict) else {}
-    if isinstance(message.get("conversation"), str):
-        return message["conversation"]
-    etm = message.get("extendedTextMessage")
-    if isinstance(etm, dict) and isinstance(etm.get("text"), str):
-        return etm["text"]
-    return ""
-
-
-def _extract_phone_from_inbound(payload: dict) -> str:
-    candidates: list[str] = []
-    for key in ("phone", "number", "from", "remoteJid"):
-        value = payload.get(key)
-        if isinstance(value, str):
-            candidates.append(value)
-    data = payload.get("data")
-    if isinstance(data, dict):
-        for key in ("phone", "number", "from", "remoteJid"):
-            value = data.get(key)
-            if isinstance(value, str):
-                candidates.append(value)
-        key_obj = data.get("key")
-        if isinstance(key_obj, dict):
-            remote_jid = key_obj.get("remoteJid")
-            if isinstance(remote_jid, str):
-                candidates.append(remote_jid)
-    for value in candidates:
-        if "@" in value:
-            value = value.split("@", 1)[0]
-        normalized = _normalize_phone(value)
-        if normalized:
-            return normalized
-    return ""
+def _fold_accents(s: str) -> str:
+    """Remove acentos para comparar palavras-chave com respostas do usuário."""
+    nfd = unicodedata.normalize("NFD", s)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
 
 
 def _extract_keywords(content: dict) -> list[str]:
@@ -98,10 +62,20 @@ def _extract_keywords(content: dict) -> list[str]:
 
 
 def _contains_interest_keyword(text: str, keywords: list[str]) -> bool:
-    txt = (text or "").strip().lower()
+    txt = _fold_accents((text or "").strip().lower())
     if not txt or not keywords:
         return False
-    return any(k in txt for k in keywords)
+    return any(_fold_accents(k) in txt for k in keywords)
+
+
+def _matched_keyword_list(text: str, keywords: list[str]) -> list[str]:
+    """Lista palavras-chave originais que aparecem no texto (comparação sem acento)."""
+    txt = _fold_accents((text or "").strip().lower())
+    out: list[str] = []
+    for k in keywords:
+        if _fold_accents(k) in txt and k not in out:
+            out.append(k)
+    return out
 
 
 @router.get("", response_model=list[CampaignResponse])
@@ -321,7 +295,12 @@ async def start_campaign(
 
 
 @router.post("/inbound/{tenant_id}")
-async def inbound_campaign_reply(tenant_id: int, request: Request, db: Annotated[Session, Depends(get_db)]):
+async def inbound_campaign_reply(
+    tenant_id: int,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    debug: Annotated[bool, Query(False, description="Inclui dados de diagnóstico na resposta (uso em testes)")],
+):
     """
     Recebe resposta inbound (ex.: Evolution webhook) e encaminha para webhook IA
     quando a mensagem do lead contém palavra-chave de interesse configurada.
@@ -333,21 +312,29 @@ async def inbound_campaign_reply(tenant_id: int, request: Request, db: Annotated
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="Payload deve ser objeto JSON.")
 
-    inbound_text = _extract_text_from_inbound(payload)
-    inbound_phone = _extract_phone_from_inbound(payload)
-    if not inbound_text or not inbound_phone:
-        return {"matched": False, "forwarded": False, "reason": "sem_texto_ou_telefone"}
+    extracted = extract_inbound_text_and_phone(payload)
+    if not extracted:
+        out: dict = {"matched": False, "forwarded": False, "reason": "sem_texto_ou_telefone"}
+        if debug:
+            out["debug"] = {
+                "event": payload.get("event"),
+                "top_level_keys": list(payload.keys()),
+                "hint": "Configure o webhook da Evolution para POST nesta URL e evento MESSAGES_UPSERT (messages.upsert).",
+            }
+        return out
 
-    lead = db.query(Lead).filter(
-        Lead.tenant_id == tenant_id,
-        Lead.phone == inbound_phone,
-    ).first()
+    inbound_text, inbound_phone = extracted
+
+    tenant_leads = db.query(Lead).filter(Lead.tenant_id == tenant_id).all()
+    lead = next((l for l in tenant_leads if phones_match_for_lead(inbound_phone, l.phone)), None)
     if not lead:
-        # Fallback para leads salvos com máscara/formatação no telefone.
-        tenant_leads = db.query(Lead).filter(Lead.tenant_id == tenant_id).all()
-        lead = next((l for l in tenant_leads if _normalize_phone(l.phone) == inbound_phone), None)
-    if not lead:
-        return {"matched": False, "forwarded": False, "reason": "lead_nao_encontrado"}
+        out = {"matched": False, "forwarded": False, "reason": "lead_nao_encontrado"}
+        if debug:
+            out["debug"] = {
+                "inbound_phone_normalized": inbound_phone,
+                "sample_lead_phones": [normalize_phone_digits(l.phone) for l in tenant_leads[:5]],
+            }
+        return out
     lead.last_response_at = datetime.utcnow()
     db.commit()
 
@@ -389,7 +376,7 @@ async def inbound_campaign_reply(tenant_id: int, request: Request, db: Annotated
         "lead_name": (lead.name or "").strip() or "Contato",
         "lead_phone": lead.phone,
         "lead_message": inbound_text,
-        "matched_keywords": [k for k in keywords if k in inbound_text.lower()],
+        "matched_keywords": _matched_keyword_list(inbound_text, keywords),
         "source": "massflow_campaign_reply",
     }
     try:

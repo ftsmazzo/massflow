@@ -518,7 +518,9 @@ function CampaignEditForm({
               />
             </label>
             <p className="campaigns-form-hint">
-              Quando o lead responder com alguma dessas palavras, o MassFlow envia nome, telefone e mensagem para o webhook configurado.
+              Quando o lead responder com alguma dessas palavras, o MassFlow envia nome, telefone e mensagem para o webhook do agente (acima).
+              Na Evolution API, configure o webhook da instância para POST em{' '}
+              <code>/api/campaigns/inbound/SEU_TENANT_ID</code> com o evento de mensagens recebidas (ex.: MESSAGES_UPSERT) — não use a URL do n8n na Evolution; o MassFlow é quem encaminha ao agente.
             </p>
           </fieldset>
           <label className="campaigns-check">
