@@ -200,6 +200,7 @@ async def inbound_campaign_reply(
 
     matched_kw = _matched_keyword_list(inbound_text, keywords) if keywords else []
     lead_display_name = (lead.name or "").strip() or "Contato"
+    # lead_message = texto da mensagem recebida (Evolution), nunca o texto do disparo da campanha
     outbound_payload = {
         "event": "campaign_reply_received",
         "tenant_id": tenant_id,

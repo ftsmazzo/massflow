@@ -40,28 +40,15 @@ Header: `apikey` com a chave da API.
 
 ## Webhook n8n (URL na campanha)
 
-Na **campanha**, campo **Webhook n8n** (opcional). Com URL preenchida:
+Na **campanha**, campo **Webhook n8n** (opcional). O MassFlow **não** chama o n8n no disparo em massa — só quando o **lead responde** (mensagem recebida na Evolution).
 
-### A) Cada envio da campanha
-
-Após cada mensagem **enviada com sucesso** a um lead, o MassFlow faz `POST` no mesmo webhook:
-
-| Campo | Descrição |
-|-------|-----------|
-| `event` | `campaign_message_sent` |
-| `message_text` | Texto (ou legenda) enviado ao lead |
-| `content_type` | `text`, `image`, etc. |
-| `tenant_id`, `campaign_id`, `campaign_name` | Campanha |
-| `lead_id`, `lead_name`, `lead_phone` | Lead |
-| `source` | `massflow` |
-
-### B) Respostas do lead (Evolution → MassFlow)
+### Respostas do lead (Evolution → MassFlow → n8n)
 
 1. Na **Evolution API**, webhook da instância com **POST** para:
    - `https://<sua-api>/api/campaigns/inbound/<TENANT_ID>`
    - Evento: `messages.upsert`.
 
-2. Para **cada resposta** recebida (após um disparo da campanha para aquele lead), o MassFlow faz `POST` no webhook do n8n:
+2. Para **cada mensagem recebida do contato** (após um envio da campanha para aquele lead), o MassFlow faz `POST` no webhook do n8n. O texto do contato vai em **`lead_message`** (não é o texto do disparo):
 
 | Campo | Descrição |
 |-------|-----------|
@@ -80,7 +67,7 @@ Filtro por palavra-chave no n8n: use `matched_keywords` ou o texto em `lead_mess
 
 ### Se o n8n não receber nada
 
-1. **URL do webhook** preenchida na campanha (a mesma para envio + respostas).
+1. **URL do webhook** preenchida na campanha (só usada ao encaminhar **respostas** do lead).
 2. **Respostas:** webhook da **Evolution** apontando para `POST .../api/campaigns/inbound/<TENANT_ID>` (`messages.upsert`). Sem isso não há `campaign_reply_received`.
 3. **`?debug=true`** no inbound quando não extrai texto/telefone (`sem_texto_ou_telefone`).
 4. **Motivos** na resposta JSON do inbound: `lead_nao_encontrado`, `sem_disparo_previo` (lead sem envio de campanha antes), `webhook_nao_configurado`, `erro_ao_enviar_webhook`.

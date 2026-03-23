@@ -502,7 +502,7 @@ function CampaignEditForm({
               </>
             )}
             <label>
-              Webhook n8n (opcional — envio + respostas)
+              Webhook n8n (opcional — só quando o lead responder)
               <input
                 value={campaignWebhookUrl}
                 onChange={(e) => setCampaignWebhookUrl(e.target.value)}
@@ -518,11 +518,10 @@ function CampaignEditForm({
               />
             </label>
             <p className="campaigns-form-hint">
-              Com URL preenchida: a cada mensagem <strong>enviada</strong> na campanha o n8n recebe{' '}
-              <code>campaign_message_sent</code>. Para <strong>respostas do lead</strong>, configure na Evolution o{' '}
-              <code>POST</code> para <code>/api/campaigns/inbound/SEU_TENANT_ID</code> — o MassFlow encaminha todas as
-              respostas com <code>campaign_reply_received</code> e <code>lead_message</code>. Filtre por palavra no n8n
-              se quiser.
+              O disparo em massa <strong>não</strong> chama o n8n. Configure na Evolution o <code>POST</code> para{' '}
+              <code>/api/campaigns/inbound/SEU_TENANT_ID</code> (mensagens recebidas). Quando o contato responder, o
+              MassFlow envia ao webhook <code>lead_message</code> = texto <strong>que o usuário digitou</strong> (evento{' '}
+              <code>campaign_reply_received</code>).
             </p>
           </fieldset>
           <label className="campaigns-check">
