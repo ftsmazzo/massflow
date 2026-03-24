@@ -55,6 +55,10 @@ class ShieldingRisk(BaseModel):
     """Detecção de risco: 403/429, falhas consecutivas; pausar instância."""
     pause_on_403: bool = True
     pause_on_429: bool = True
+    check_whatsapp_before_send: bool = Field(
+        False,
+        description="Validar se o número existe no WhatsApp antes de enviar (Evolution check-is-whatsapp).",
+    )
     max_consecutive_errors: int = Field(3, ge=1, le=10, description="Pausar após N erros consecutivos")
     pause_duration_sec: int = Field(3600, ge=300, le=86400, description="Tempo de pausa da instância (seg)")
 

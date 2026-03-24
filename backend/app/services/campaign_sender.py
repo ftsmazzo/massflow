@@ -21,7 +21,7 @@ from app.models.evolution_instance import EvolutionInstance
 from app.models.associations import list_leads, lead_tags
 from app.models.tag import Tag
 from app.models.shielding_config import TenantShieldingConfig
-from app.services.evolution import send_text_sync, send_media_sync
+from app.services.evolution import send_text_sync, send_media_sync, check_whatsapp_numbers_sync
 
 UPLOADS_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
 MEDIATYPE_MAP = {"image": "Image", "video": "Video", "audio": "Audio", "document": "Document"}
@@ -46,6 +46,11 @@ def _get_delay_sec(config: dict) -> tuple[int, int]:
         int(delays.get("min_sec", 20)),
         int(delays.get("max_sec", 45)),
     )
+
+
+def _is_whatsapp_check_enabled(config: dict) -> bool:
+    risk = config.get("risk") or {}
+    return bool(risk.get("check_whatsapp_before_send", False))
 
 
 def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
@@ -138,6 +143,8 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
             ).first()
             config = (shielding_row.config or {}) if shielding_row else {}
         min_sec, max_sec = _get_delay_sec(config)
+        check_whatsapp_before_send = _is_whatsapp_check_enabled(config)
+        whatsapp_cache: dict[tuple[int, str], bool] = {}
 
         content = campaign.content or {}
         content_type = (content.get("type") or "text").lower()
@@ -165,6 +172,38 @@ def run_campaign_sync(campaign_id: int, tenant_id: int) -> None:
         for i, lead in enumerate(leads):
             inst = instances[i % len(instances)]
             try:
+                lead_phone_digits = "".join(c for c in str(lead.phone or "") if c.isdigit())
+                if check_whatsapp_before_send and lead_phone_digits:
+                    cache_key = (inst.id, lead_phone_digits)
+                    exists = whatsapp_cache.get(cache_key)
+                    if exists is None:
+                        try:
+                            check_map = check_whatsapp_numbers_sync(
+                                inst.api_url,
+                                inst.api_key or "",
+                                inst.name,
+                                [lead_phone_digits],
+                            )
+                            exists = check_map.get(lead_phone_digits, True)
+                        except Exception as check_err:
+                            logger.warning(
+                                "campaign_whatsapp_check_fail tenant_id=%s campaign_id=%s lead_id=%s inst_id=%s err=%s",
+                                tenant_id, campaign_id, lead.id, inst.id, str(check_err)[:300]
+                            )
+                            exists = True
+                        whatsapp_cache[cache_key] = exists
+                    if not exists:
+                        cm = CampaignMessage(
+                            campaign_id=campaign.id,
+                            lead_id=lead.id,
+                            evolution_instance_id=inst.id,
+                            status="failed",
+                            error_message="Número sem WhatsApp (validação pré-envio).",
+                        )
+                        db.add(cm)
+                        db.commit()
+                        continue
+
                 if content_type == "text":
                     text = _resolve_text(text_template, lead)
                     if not text.strip():

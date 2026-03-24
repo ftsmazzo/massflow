@@ -217,6 +217,7 @@ export default function Contacts() {
       {showForm && editingContact != null && (
         <ContactForm
           contact={editingContact}
+          allTags={tags}
           onClose={() => { setShowForm(false); setEditingContact(null) }}
           onSuccess={handleFormSuccess}
         />
@@ -227,10 +228,12 @@ export default function Contacts() {
 
 function ContactForm({
   contact,
+  allTags,
   onClose,
   onSuccess,
 }: {
   contact: Contact | null
+  allTags: TagItem[]
   onClose: () => void
   onSuccess: () => void
 }) {
@@ -238,6 +241,11 @@ function ContactForm({
   const [name, setName] = useState(contact?.name ?? '')
   const [email, setEmail] = useState(contact?.email ?? '')
   const [optIn, setOptIn] = useState(contact?.opt_in ?? true)
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>(() => {
+    if (!contact) return []
+    const byName = new Map(allTags.map((t) => [t.name, t.id]))
+    return contact.tags.map((n) => byName.get(n)).filter((v): v is number => typeof v === 'number')
+  })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -248,7 +256,12 @@ function ContactForm({
     setError('')
     setLoading(true)
     if (isEdit) {
-      contactsApi.update(contact!.id, { name: name || undefined, email: email || undefined, opt_in: optIn })
+      contactsApi.update(contact!.id, {
+        name: name || undefined,
+        email: email || undefined,
+        opt_in: optIn,
+        tag_ids: selectedTagIds,
+      })
         .then(onSuccess)
         .catch((err) => setError(getApiErrorMessage(err)))
         .finally(() => setLoading(false))
@@ -286,6 +299,31 @@ function ContactForm({
             <input type="checkbox" checked={optIn} onChange={(e) => setOptIn(e.target.checked)} />
             Opt-in (pode receber mensagens)
           </label>
+          <fieldset className="contacts-tags-fieldset">
+            <legend>Tags</legend>
+            {allTags.length === 0 ? (
+              <p className="contacts-tags-empty">Nenhuma tag cadastrada.</p>
+            ) : (
+              <div className="contacts-tags-selector">
+                {allTags.map((t) => (
+                  <label key={t.id} className="contacts-check">
+                    <input
+                      type="checkbox"
+                      checked={selectedTagIds.includes(t.id)}
+                      onChange={(e) =>
+                        setSelectedTagIds((prev) =>
+                          e.target.checked
+                            ? (prev.includes(t.id) ? prev : [...prev, t.id])
+                            : prev.filter((id) => id !== t.id)
+                        )
+                      }
+                    />
+                    {t.name}
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
           <div className="contacts-form-actions">
             <button type="button" onClick={onClose}>Cancelar</button>
             <button type="submit" disabled={loading}>{loading ? 'Salvando…' : 'Salvar'}</button>

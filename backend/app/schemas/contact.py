@@ -23,6 +23,7 @@ class ContactUpdate(BaseModel):
     custom_fields: dict[str, Any] | None = None
     opt_in: bool | None = None
     status: str | None = None
+    tag_ids: list[int] | None = None
 
 
 class ContactResponse(BaseModel):

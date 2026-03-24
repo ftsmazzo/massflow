@@ -159,6 +159,42 @@ def send_media_sync(
         return r.json() if r.content else {}
 
 
+def check_whatsapp_numbers_sync(
+    api_url: str,
+    api_key: str,
+    instance_name: str,
+    numbers: list[str],
+) -> dict[str, bool]:
+    """
+    POST /chat/whatsappNumbers/{instance} (Evolution 2.3.7).
+    Retorna mapa numero->exists para os números informados.
+    """
+    base = _base(api_url)
+    safe = quote(instance_name, safe="")
+    digits = ["".join(c for c in str(n or "") if c.isdigit()) for n in numbers]
+    payload_numbers = [n for n in digits if n]
+    if not payload_numbers:
+        return {}
+    with httpx.Client(timeout=30.0) as client:
+        r = client.post(
+            f"{base}/chat/whatsappNumbers/{safe}",
+            json={"numbers": payload_numbers},
+            headers=_headers(api_key),
+        )
+        r.raise_for_status()
+        data = r.json() if r.content else []
+    out: dict[str, bool] = {}
+    if isinstance(data, list):
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            num = "".join(c for c in str(item.get("number") or "") if c.isdigit())
+            if not num:
+                continue
+            out[num] = bool(item.get("exists"))
+    return out
+
+
 def find_webhook_sync(api_url: str, api_key: str, instance_name: str) -> dict[str, Any]:
     """
     GET /webhook/find/{instance} (Evolution API 2.3.7) — URL e eventos configurados na instância.

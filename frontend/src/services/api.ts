@@ -153,7 +153,13 @@ export type ShieldingConfig = {
   limits: { max_per_hour: number; max_per_day: number; new_account_max_per_day: number; new_account_days: number }
   warmup: { enabled: boolean; days: number; max_per_day: number }
   rotation: { enabled: boolean; switch_after_messages: number }
-  risk: { pause_on_403: boolean; pause_on_429: boolean; max_consecutive_errors: number; pause_duration_sec: number }
+  risk: {
+    pause_on_403: boolean
+    pause_on_429: boolean
+    check_whatsapp_before_send: boolean
+    max_consecutive_errors: number
+    pause_duration_sec: number
+  }
   content: { max_repetition_alert_pct: number; require_personalization: boolean; opt_out_keywords: string[] }
   schedule: { start_hour: number; end_hour: number; timezone: string }
 }
@@ -187,7 +193,7 @@ export const contactsApi = {
   get: (id: number) => api.get<Contact>(`/api/contacts/${id}`),
   create: (data: { phone: string; name?: string; email?: string; custom_fields?: Record<string, unknown>; opt_in?: boolean }) =>
     api.post<Contact>('/api/contacts', data),
-  update: (id: number, data: { name?: string; email?: string; custom_fields?: Record<string, unknown>; opt_in?: boolean; status?: string }) =>
+  update: (id: number, data: { name?: string; email?: string; custom_fields?: Record<string, unknown>; opt_in?: boolean; status?: string; tag_ids?: number[] }) =>
     api.patch<Contact>(`/api/contacts/${id}`, data),
   delete: (id: number) => api.delete(`/api/contacts/${id}`),
   bulkDelete: (ids: number[]) =>

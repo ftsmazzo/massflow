@@ -10,7 +10,13 @@ const emptyConfig: ShieldingConfig = {
   limits: { max_per_hour: 30, max_per_day: 200, new_account_max_per_day: 50, new_account_days: 7 },
   warmup: { enabled: true, days: 7, max_per_day: 20 },
   rotation: { enabled: true, switch_after_messages: 100 },
-  risk: { pause_on_403: true, pause_on_429: true, max_consecutive_errors: 3, pause_duration_sec: 3600 },
+  risk: {
+    pause_on_403: true,
+    pause_on_429: true,
+    check_whatsapp_before_send: false,
+    max_consecutive_errors: 3,
+    pause_duration_sec: 3600,
+  },
   content: {
     max_repetition_alert_pct: 70,
     require_personalization: true,
@@ -281,6 +287,11 @@ export default function Shielding() {
                 updateNested('risk', 'pause_on_403', v)
                 updateNested('risk', 'pause_on_429', v)
               }}
+            />
+            <Toggle
+              label="Validar número com WhatsApp antes do envio (reduz falhas em números inválidos)"
+              checked={config.risk.check_whatsapp_before_send}
+              onChange={(v) => updateNested('risk', 'check_whatsapp_before_send', v)}
             />
             <Toggle
               label="Recomendar personalização (ex.: uso de variáveis)"

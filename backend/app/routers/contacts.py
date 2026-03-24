@@ -165,6 +165,13 @@ def update_contact(
         lead.opt_in = body.opt_in
     if body.status is not None:
         lead.status = body.status
+    if body.tag_ids is not None:
+        tags = (
+            db.query(Tag)
+            .filter(Tag.tenant_id == tenant_id, Tag.id.in_(body.tag_ids))
+            .all()
+        )
+        lead.tags = tags
     db.commit()
     db.refresh(lead)
     return _lead_to_response(lead)
