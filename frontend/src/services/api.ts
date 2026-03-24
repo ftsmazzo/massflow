@@ -190,6 +190,8 @@ export const contactsApi = {
   update: (id: number, data: { name?: string; email?: string; custom_fields?: Record<string, unknown>; opt_in?: boolean; status?: string }) =>
     api.patch<Contact>(`/api/contacts/${id}`, data),
   delete: (id: number) => api.delete(`/api/contacts/${id}`),
+  bulkDelete: (ids: number[]) =>
+    api.post<{ deleted: number; errors: { id: number; detail: string }[] }>('/api/contacts/bulk-delete', { ids }),
   sync: (contacts: Array<{ phone: string; name?: string; email?: string; tags?: string[]; list_id?: number; custom_fields?: Record<string, unknown>; opt_in?: boolean }>) =>
     api.post<{ created: number; updated: number; errors: Array<Record<string, unknown>> }>('/api/contacts/sync', { contacts }),
 }

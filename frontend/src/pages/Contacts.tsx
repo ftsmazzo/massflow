@@ -13,6 +13,8 @@ export default function Contacts() {
   const [filterTag, setFilterTag] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingContact, setEditingContact] = useState<Contact | null>(null)
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [bulkDeleting, setBulkDeleting] = useState(false)
 
   function loadContacts() {
     const params: Record<string, unknown> = { limit: 200 }
@@ -20,7 +22,11 @@ export default function Contacts() {
     if (filterTag.trim()) params.tags = filterTag.trim()
     setLoading(true)
     contactsApi.list(params)
-      .then((r) => setContacts(r.data))
+      .then((r) => {
+        setContacts(r.data)
+        const valid = new Set(r.data.map((c) => c.id))
+        setSelectedIds((prev) => prev.filter((id) => valid.has(id)))
+      })
       .catch(() => setError('Falha ao carregar contatos.'))
       .finally(() => setLoading(false))
   }
@@ -57,6 +63,36 @@ export default function Contacts() {
       .catch((err) => setError(getApiErrorMessage(err)))
   }
 
+  function toggleSelect(id: number, checked: boolean) {
+    setSelectedIds((prev) => {
+      if (checked) return prev.includes(id) ? prev : [...prev, id]
+      return prev.filter((x) => x !== id)
+    })
+  }
+
+  function toggleSelectAll(checked: boolean) {
+    if (!checked) {
+      setSelectedIds([])
+      return
+    }
+    setSelectedIds(contacts.map((c) => c.id))
+  }
+
+  function handleBulkDelete() {
+    if (selectedIds.length === 0) return
+    if (!confirm(`Remover ${selectedIds.length} contato(s) selecionado(s)?`)) return
+    setBulkDeleting(true)
+    contactsApi.bulkDelete(selectedIds)
+      .then((res) => {
+        const fail = res.data.errors.length
+        setSelectedIds([])
+        loadContacts()
+        if (fail > 0) setError(`Removidos: ${res.data.deleted}. Falhas: ${fail}.`)
+      })
+      .catch((err) => setError(getApiErrorMessage(err)))
+      .finally(() => setBulkDeleting(false))
+  }
+
   if (error && contacts.length === 0) {
     return (
       <div className="contacts-page">
@@ -79,6 +115,18 @@ export default function Contacts() {
         {(filterListId || filterTag) && (
           <span className="contacts-volume-filter">com os filtros aplicados</span>
         )}
+      </div>
+
+      <div className="contacts-bulk-bar">
+        <span>{selectedIds.length} selecionado(s)</span>
+        <button
+          type="button"
+          className="contacts-btn secondary"
+          disabled={selectedIds.length === 0 || bulkDeleting}
+          onClick={handleBulkDelete}
+        >
+          {bulkDeleting ? 'Removendo…' : 'Excluir selecionados'}
+        </button>
       </div>
 
       {error && <div className="contacts-error-banner">{error}</div>}
@@ -119,6 +167,14 @@ export default function Contacts() {
           <table className="contacts-table">
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    checked={contacts.length > 0 && selectedIds.length === contacts.length}
+                    onChange={(e) => toggleSelectAll(e.target.checked)}
+                    aria-label="Selecionar todos"
+                  />
+                </th>
                 <th>Telefone</th>
                 <th>Nome</th>
                 <th>Email</th>
@@ -130,6 +186,14 @@ export default function Contacts() {
             <tbody>
               {contacts.map((c) => (
                 <tr key={c.id}>
+                  <td>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(c.id)}
+                      onChange={(e) => toggleSelect(c.id, e.target.checked)}
+                      aria-label={`Selecionar contato ${c.phone}`}
+                    />
+                  </td>
                   <td className="contacts-cell-phone">{c.phone}</td>
                   <td>{c.name || '—'}</td>
                   <td>{c.email || '—'}</td>

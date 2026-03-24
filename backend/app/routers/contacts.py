@@ -20,6 +20,8 @@ from app.schemas.contact import (
     ContactResponse,
     ContactSyncBody,
     ContactSyncResponse,
+    ContactBulkDeleteBody,
+    ContactBulkDeleteResponse,
 )
 
 router = APIRouter(prefix="/contacts", tags=["Contacts"])
@@ -182,6 +184,33 @@ def delete_contact(
     db.delete(lead)
     db.commit()
     return None
+
+
+@router.post("/bulk-delete", response_model=ContactBulkDeleteResponse)
+def bulk_delete_contacts(
+    body: ContactBulkDeleteBody,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Remove contatos em lote (somente do tenant logado)."""
+    tenant_id = user.tenant_id
+    deleted = 0
+    errors: list[dict] = []
+    seen: set[int] = set()
+
+    for contact_id in body.ids:
+        if contact_id in seen:
+            continue
+        seen.add(contact_id)
+        lead = db.query(Lead).filter(Lead.id == contact_id, Lead.tenant_id == tenant_id).first()
+        if not lead:
+            errors.append({"id": contact_id, "detail": "Contato não encontrado."})
+            continue
+        db.delete(lead)
+        deleted += 1
+
+    db.commit()
+    return ContactBulkDeleteResponse(deleted=deleted, errors=errors)
 
 
 @router.post("/sync", response_model=ContactSyncResponse)

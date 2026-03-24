@@ -70,3 +70,14 @@ class ContactSyncResponse(BaseModel):
     created: int = 0
     updated: int = 0
     errors: list[dict[str, Any]] = Field(default_factory=list)
+
+
+class ContactBulkDeleteBody(BaseModel):
+    """Body para exclusão em lote de contatos."""
+    ids: list[int] = Field(default_factory=list, min_length=1)
+
+
+class ContactBulkDeleteResponse(BaseModel):
+    """Resultado da exclusão em lote de contatos."""
+    deleted: int = 0
+    errors: list[dict[str, Any]] = Field(default_factory=list)
