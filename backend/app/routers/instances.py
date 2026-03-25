@@ -374,11 +374,31 @@ async def instance_status(
     return {"instance": inst.name, "connection_state": state}
 
 
+def _raw_connection_state_label(state: dict | None) -> str:
+    """
+    Evolution 2.x costuma devolver o estado em `instance.state` (doc), não no topo.
+    Aceita também formato plano (`state` / `status` na raiz).
+    """
+    if not state or not isinstance(state, dict):
+        return ""
+    for key in ("state", "status", "connectionStatus"):
+        v = state.get(key)
+        if isinstance(v, str) and v.strip():
+            return v.strip()
+    inner = state.get("instance")
+    if isinstance(inner, dict):
+        for key in ("state", "status", "connectionStatus"):
+            v = inner.get(key)
+            if isinstance(v, str) and v.strip():
+                return v.strip()
+    return ""
+
+
 def _state_to_status(state: dict | None) -> str:
     """Mapeia connection_state da Evolution para status local (connected, close, etc.)."""
     if not state:
         return "close"
-    s = (state.get("state") or state.get("status") or "").lower()
+    s = _raw_connection_state_label(state).lower()
     if s in ("open", "connected"):
         return "connected"
     return s or "close"
