@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # POST outbound para webhooks externos (n8n): false se HTTPS interno com certificado autoassinado
     WEBHOOK_VERIFY_SSL: bool = True
 
+    # Segredo para POST /api/reception-context (n8n grava contexto após gerar msg_recepcao). Vazio = rota desativada (503).
+    RECEPTION_CONTEXT_SECRET: str = os.getenv("RECEPTION_CONTEXT_SECRET", "")
+
     # Onde a Evolution (na internet) deve chamar o MassFlow. É só o domínio do SEU backend, sem path.
     # Ex.: https://massflow-backend.seudominio.com ou https://api.seudominio.com
     # NÃO é URL da Evolution, nÃO é n8n. No Easypanel: copie a URL pública do serviço da API (mesma que responde /health).

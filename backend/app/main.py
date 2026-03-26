@@ -12,7 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import auth, tenants, instances, shielding, contacts, lists, tags, campaigns
+from app.routers import auth, tenants, instances, shielding, contacts, lists, tags, campaigns, reception_context
 
 
 def _origin_allowed(origin: str) -> bool:
@@ -77,7 +77,7 @@ class OptionsCORSMiddleware(BaseHTTPMiddleware):
             "Allow": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
             "Access-Control-Max-Age": "86400",
             "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, Accept, X-Massflow-Reception-Secret",
             "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
         }
         if origin:
@@ -138,3 +138,4 @@ app.include_router(contacts.router, prefix="/api")
 app.include_router(lists.router, prefix="/api")
 app.include_router(tags.router, prefix="/api")
 app.include_router(campaigns.router, prefix="/api")
+app.include_router(reception_context.router, prefix="/api")
