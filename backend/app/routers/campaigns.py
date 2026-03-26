@@ -31,7 +31,7 @@ from app.schemas.campaign import (
     CampaignResponse,
     CampaignUpdate,
 )
-from app.services.campaign_sender import run_campaign_sync
+from app.services.campaign_sender import _resolve_text, run_campaign_sync
 from app.services.inbound_evolution import (
     extract_evolution_instance_name,
     extract_inbound_text_and_phone,
@@ -99,53 +99,20 @@ def _dt_iso(dt: datetime | None) -> str | None:
     return dt.isoformat()
 
 
-def _lead_webhook_snapshot(lead: Lead) -> dict:
-    tag_names = sorted({t.name for t in lead.tags})
-    lists_out = [{"id": lst.id, "name": lst.name} for lst in lead.lists]
-    return {
-        "id": lead.id,
-        "email": lead.email,
-        "custom_fields": lead.custom_fields if isinstance(lead.custom_fields, dict) else {},
-        "opt_in": lead.opt_in,
-        "status": lead.status,
-        "created_at": _dt_iso(lead.created_at),
-        "last_sent_at": _dt_iso(lead.last_sent_at),
-        "last_response_at": _dt_iso(lead.last_response_at),
-        "tag_names": tag_names,
-        "lists": lists_out,
-    }
-
-
-def _campaign_webhook_snapshot(campaign: Campaign, list_name: str | None) -> dict:
-    content = campaign.content if isinstance(campaign.content, dict) else {}
-    return {
-        "id": campaign.id,
-        "name": campaign.name,
-        "type": campaign.type,
-        "status": campaign.status,
-        "list_id": campaign.list_id,
-        "list_name": list_name,
-        "tag_filter_include": campaign.tag_filter_include,
-        "tag_filter_exclude": campaign.tag_filter_exclude,
-        "content": content,
-        "use_global_shielding": campaign.use_global_shielding,
-        "shielding_override": campaign.shielding_override,
-        "instance_ids": campaign.instance_ids,
-        "scheduled_at": _dt_iso(campaign.scheduled_at),
-        "started_at": _dt_iso(campaign.started_at),
-        "completed_at": _dt_iso(campaign.completed_at),
-        "created_at": _dt_iso(campaign.created_at),
-    }
-
-
-def _last_campaign_message_snapshot(msg: CampaignMessage) -> dict:
-    return {
-        "campaign_message_id": msg.id,
-        "message_id": msg.message_id,
-        "status": msg.status,
-        "sent_at": _dt_iso(msg.sent_at),
-        "evolution_instance_id": msg.evolution_instance_id,
-    }
+def _resolved_campaign_outbound_text(content: dict, lead: Lead) -> tuple[str, str]:
+    """
+    Texto/caption efetivamente enviado ao lead no disparo (mesma lógica do campaign_sender),
+    com {nome}, {telefone}, {email} substituídos.
+    """
+    c = content if isinstance(content, dict) else {}
+    content_type = (c.get("type") or "text").lower()
+    text_template = c.get("text") or c.get("caption") or ""
+    caption_template = str(c.get("caption") or c.get("text") or "")
+    if content_type == "text":
+        body = _resolve_text(str(text_template), lead)
+    else:
+        body = _resolve_text(caption_template, lead)
+    return content_type, body
 
 
 def _resolve_sent_campaign_for_reply(
@@ -345,32 +312,31 @@ async def _inbound_campaign_reply_impl(
     db.add(reply_row)
     db.flush()
 
-    campaign_list = db.query(List).filter(List.id == campaign.list_id).first()
-    list_name = campaign_list.name if campaign_list else None
     received_at = datetime.utcnow()
+    outbound_type, outbound_text = _resolved_campaign_outbound_text(content, lead)
 
     outbound_payload = {
         "event": "campaign_reply_received",
         "tenant_id": tenant_id,
         "campaign_id": campaign.id,
         "campaign_name": campaign.name,
+        "campaign_outbound_type": outbound_type,
+        "campaign_outbound_message": outbound_text,
         "lead_id": lead.id,
         "lead_name": lead_display_name,
         "lead_phone": lead.phone,
+        "lead_email": lead.email,
         "lead_message": inbound_text,
         "matched_keywords": matched_kw,
-        "response_keywords": keywords,
         "inbound_reply_id": reply_row.id,
         "received_at": _dt_iso(received_at),
+        "campaign_message_sent_at": _dt_iso(latest_msg.sent_at),
+        "lead_created_at": _dt_iso(lead.created_at),
+        "lead_last_sent_at": _dt_iso(lead.last_sent_at),
+        "lead_last_response_at": _dt_iso(lead.last_response_at),
         "source": "massflow",
         "evolution_instance_name": ev_instance_name,
         "evolution_instance_id": ev_instance_id,
-        "evolution_instance_display_name": (
-            evolution_instance_row.display_name if evolution_instance_row else None
-        ),
-        "lead": _lead_webhook_snapshot(lead),
-        "campaign": _campaign_webhook_snapshot(campaign, list_name),
-        "last_campaign_message": _last_campaign_message_snapshot(latest_msg),
     }
 
     if not forward_n8n:
