@@ -2,6 +2,7 @@
 Gravação do contexto de recepção (n8n) após gerar a mensagem — chamada via HTTP com segredo compartilhado.
 """
 import json
+from datetime import datetime
 from typing import Annotated, Any
 from urllib.parse import parse_qs
 
@@ -121,6 +122,25 @@ def _parse_body_to_dict(raw_bytes: bytes) -> dict[str, Any]:
     return _normalize_ids_for_schema(flat)
 
 
+def _build_agent_first_instruction(row: ReceptionContext) -> str:
+    lead_name = (row.lead_name or "Contato").strip()
+    phone = (row.lead_phone or "").strip()
+    campanha = (row.campanha or "campanha não informada").strip()
+    msg_campanha = (row.msg_campanha or "").strip() or "mensagem da campanha não registrada"
+    mensagem_lead = (row.mensagem_lead or "").strip() or "resposta inicial não registrada"
+    msg_recepcao = (row.msg_recepcao or "").strip() or "mensagem de recepção não registrada"
+    return (
+        "Instrução de contexto para PRIMEIRA interação deste atendimento:\n"
+        f"- Lead: {lead_name}\n"
+        f"- Telefone: {phone}\n"
+        f"- Origem: respondeu ao disparo da campanha \"{campanha}\".\n"
+        f"- Mensagem recebida na campanha: {msg_campanha}\n"
+        f"- Resposta inicial do lead: {mensagem_lead}\n"
+        f"- Mensagem de recepção já enviada: {msg_recepcao}\n"
+        "Agora continue a conversa a partir deste ponto, sem repetir a mensagem de recepção."
+    )
+
+
 @router.post("", status_code=201)
 async def create_reception_context(
     request: Request,
@@ -207,3 +227,48 @@ async def create_reception_context(
     db.commit()
     db.refresh(row)
     return {"id": row.id, "created": True}
+
+
+@router.get("/next-first-interaction")
+def consume_next_first_interaction_context(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    tenant_id: int,
+    lead_phone: str,
+    consume: bool = True,
+):
+    """
+    Busca o último reception_context não consumido para tenant+telefone.
+    Se `consume=true`, marca consumed_at=now() ao devolver.
+    """
+    _require_reception_secret(request)
+    phone = "".join(c for c in str(lead_phone or "") if c.isdigit())
+    if not phone:
+        raise HTTPException(status_code=422, detail="lead_phone inválido.")
+
+    row = (
+        db.query(ReceptionContext)
+        .filter(
+            ReceptionContext.tenant_id == tenant_id,
+            ReceptionContext.lead_phone == phone,
+            ReceptionContext.consumed_at.is_(None),
+        )
+        .order_by(ReceptionContext.created_at.desc(), ReceptionContext.id.desc())
+        .first()
+    )
+    if not row:
+        return {"found": False, "instruction": None}
+
+    instruction = _build_agent_first_instruction(row)
+    if consume:
+        row.consumed_at = datetime.utcnow()
+        db.commit()
+
+    return {
+        "found": True,
+        "reception_context_id": row.id,
+        "instruction": instruction,
+        "payload": row.payload,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "consumed_at": row.consumed_at.isoformat() if row.consumed_at else None,
+    }

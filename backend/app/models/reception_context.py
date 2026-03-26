@@ -26,3 +26,4 @@ class ReceptionContext(Base):
     payload = Column(JSONB, nullable=False, default=dict)
 
     created_at = Column(DateTime, default=datetime.utcnow)
+    consumed_at = Column(DateTime, nullable=True, index=True)
