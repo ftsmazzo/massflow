@@ -2,7 +2,8 @@
 Gravação do contexto de recepção (n8n) após gerar a mensagem — chamada via HTTP com segredo compartilhado.
 """
 import json
-from typing import Annotated
+from typing import Annotated, Any
+from urllib.parse import parse_qs
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import ValidationError
@@ -34,6 +35,92 @@ def _require_reception_secret(request: Request) -> None:
     raise HTTPException(status_code=401, detail="Credencial inválida ou ausente.")
 
 
+def _form_value_to_primitive(value: Any) -> Any:
+    if hasattr(value, "read"):
+        return None
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
+def _dict_from_starlette_form(form: Any) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key, value in form.multi_items():
+        v = _form_value_to_primitive(value)
+        if v is None:
+            continue
+        out[key] = v
+    return out
+
+
+def _normalize_ids_for_schema(data: dict[str, Any]) -> dict[str, Any]:
+    """Form envia strings; ids opcionais vazios são removidos."""
+    out = dict(data)
+    for k in ("lead_id", "campaign_id"):
+        if k not in out:
+            continue
+        val = out[k]
+        if val is None or (isinstance(val, str) and not val.strip()):
+            del out[k]
+            continue
+        if isinstance(val, str):
+            try:
+                out[k] = int(val.strip())
+            except ValueError:
+                del out[k]
+        elif isinstance(val, int):
+            pass
+        else:
+            try:
+                out[k] = int(val)
+            except (TypeError, ValueError):
+                del out[k]
+    if "tenant_id" in out and isinstance(out["tenant_id"], str):
+        out["tenant_id"] = int(out["tenant_id"].strip())
+    return out
+
+
+def _parse_body_to_dict(raw_bytes: bytes) -> dict[str, Any]:
+    if not raw_bytes or not raw_bytes.strip():
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Corpo vazio. No n8n (HTTP Request v4): (A) Body → Content Type "
+                "'Form-Urlencoded' → Add Parameter: msg_recepcao, tenant_id, lead_phone "
+                "(e opcionais lead_id, campaign_id, lead_name, lead_message, campaign_name, "
+                "campaign_outbound_message). "
+                "(B) Ou Body → JSON → expressão exatamente: ={{ JSON.stringify($json) }} "
+                "(com '=' no início). "
+                "(C) Ou nó Code antes do HTTP: return { json: { ... } }. "
+                "Na execução, abra a aba que mostra o request e confira se há body."
+            ),
+        )
+    text = raw_bytes.decode("utf-8").strip()
+    if text.startswith("{") or text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as e:
+            raise HTTPException(status_code=422, detail=f"JSON inválido: {e!s}") from e
+        if isinstance(parsed, list):
+            if len(parsed) != 1:
+                raise HTTPException(
+                    status_code=422,
+                    detail="Se enviar array, use exatamente um objeto: [{ ... }].",
+                )
+            parsed = parsed[0]
+        if not isinstance(parsed, dict):
+            raise HTTPException(status_code=422, detail="JSON deve ser um objeto na raiz.")
+        return parsed
+    qs = parse_qs(text, keep_blank_values=True)
+    if not qs:
+        raise HTTPException(
+            status_code=422,
+            detail="Body não é JSON. Use Form-Urlencoded no n8n ou JSON com objeto { ... }.",
+        )
+    flat = {k: (vals[0] if len(vals) == 1 else vals) for k, vals in qs.items()}
+    return _normalize_ids_for_schema(flat)
+
+
 @router.post("", status_code=201)
 async def create_reception_context(
     request: Request,
@@ -45,36 +132,18 @@ async def create_reception_context(
     Autenticação: header `X-Massflow-Reception-Secret: <RECEPTION_CONTEXT_SECRET>`
     ou `Authorization: Bearer <RECEPTION_CONTEXT_SECRET>`.
 
-    Body: JSON objeto. Se o n8n enviar `[{ ... }]`, também é aceito (um único elemento).
+    Body: JSON objeto ou `[{ ... }]`; ou **Form-Urlencoded** / **multipart** com os mesmos campos
+    (recomendado se o JSON do n8n estiver indo vazio).
     """
     _require_reception_secret(request)
-    raw_bytes = await request.body()
-    if not raw_bytes or not raw_bytes.strip():
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "Body JSON ausente. No n8n (HTTP Request): POST, em Body escolha JSON e "
-                "garanta que a expressão retorne um objeto { }, não só campos soltos. "
-                "Se usar expressão, prefira retorno direto do objeto (sem colocar o item dentro de array)."
-            ),
-        )
-    try:
-        data = json.loads(raw_bytes.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as e:
-        raise HTTPException(status_code=422, detail=f"JSON inválido: {e!s}") from e
+    content_type = (request.headers.get("content-type") or "").split(";")[0].strip().lower()
 
-    if isinstance(data, list):
-        if len(data) != 1:
-            raise HTTPException(
-                status_code=422,
-                detail="Se enviar array, use exatamente um objeto: [{ ... }].",
-            )
-        data = data[0]
-    if not isinstance(data, dict):
-        raise HTTPException(
-            status_code=422,
-            detail="O body deve ser um objeto JSON (ou array com um objeto).",
-        )
+    if content_type in ("application/x-www-form-urlencoded", "multipart/form-data"):
+        form = await request.form()
+        data = _normalize_ids_for_schema(_dict_from_starlette_form(form))
+    else:
+        raw_bytes = await request.body()
+        data = _normalize_ids_for_schema(_parse_body_to_dict(raw_bytes))
 
     try:
         body = ReceptionContextCreate.model_validate(data)
