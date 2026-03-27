@@ -56,8 +56,30 @@ class QualificationSessionState(BaseModel):
     answers: list[QualificationAnswerItem] = Field(default_factory=list)
     webhook_sent: bool = False
     webhook_url: str | None = None
+    confirmation_message: str | None = None
+    recorded_step: str | None = None
+    final_result: dict[str, Any] | None = None
 
 
 class QualificationSessionQueryOut(BaseModel):
     found: bool
     state: QualificationSessionState | None = None
+
+
+class QualificationSessionListItem(BaseModel):
+    session_id: int
+    lead_id: int | None = None
+    lead_name: str | None = None
+    lead_phone: str
+    status: str
+    score_total: int
+    classification: str | None = None
+    answers_count: int
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+class QualificationSessionListOut(BaseModel):
+    campaign_id: int
+    total: int
+    sessions: list[QualificationSessionListItem] = Field(default_factory=list)

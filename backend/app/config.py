@@ -48,6 +48,11 @@ class Settings(BaseSettings):
     RECEPTION_CONTEXT_SECRET: str = os.getenv("RECEPTION_CONTEXT_SECRET", "")
     # Segredo para /api/qualification (n8n/agente grava respostas da qualificação). Vazio = rotas secretas desativadas.
     QUALIFICATION_SECRET: str = os.getenv("QUALIFICATION_SECRET", "")
+    # Webhook padrão para respostas por palavras-chave (n8n).
+    DEFAULT_CAMPAIGN_WEBHOOK_URL: str = os.getenv(
+        "DEFAULT_CAMPAIGN_WEBHOOK_URL",
+        "https://fabricaia-n8n.90qhxz.easypanel.host/webhook/controle-disparo",
+    )
 
     # Onde a Evolution (na internet) deve chamar o MassFlow. É só o domínio do SEU backend, sem path.
     # Ex.: https://massflow-backend.seudominio.com ou https://api.seudominio.com

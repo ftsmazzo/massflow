@@ -3,11 +3,14 @@ import {
   campaignsApi,
   listsApi,
   instancesApi,
+  qualificationApi,
   type CampaignItem,
   type ListItem,
   type Instance,
   type CampaignInboundReplyItem,
   type CampaignReport,
+  type QualificationConfig,
+  type QualificationSessionListItem,
 } from '../services/api'
 import { getApiErrorMessage } from '../services/api'
 import './Campaigns.css'
@@ -34,6 +37,7 @@ const TYPE_LABEL: Record<string, string> = {
 }
 
 const DELETABLE_STATUSES = new Set(['draft', 'cancelled', 'completed', 'scheduled'])
+const FIXED_WEBHOOK_URL = 'https://fabricaia-n8n.90qhxz.easypanel.host/webhook/controle-disparo'
 
 function canDeleteCampaign(c: CampaignItem) {
   return DELETABLE_STATUSES.has(c.status)
@@ -55,6 +59,7 @@ export default function Campaigns() {
   const [repliesLoading, setRepliesLoading] = useState(false)
   const [showReplies, setShowReplies] = useState(false)
   const [reportCampaign, setReportCampaign] = useState<CampaignItem | null>(null)
+  const [qualificationCampaign, setQualificationCampaign] = useState<CampaignItem | null>(null)
 
   function load() {
     setLoading(true)
@@ -353,6 +358,13 @@ export default function Campaigns() {
                 >
                   Relatório
                 </button>
+                <button
+                  type="button"
+                  className="campaigns-btn-link"
+                  onClick={() => setQualificationCampaign(c)}
+                >
+                  Qualificação
+                </button>
                 {canDeleteCampaign(c) && (
                   <button
                     type="button"
@@ -388,6 +400,12 @@ export default function Campaigns() {
         <CampaignReportModal
           campaign={reportCampaign}
           onClose={() => setReportCampaign(null)}
+        />
+      )}
+      {qualificationCampaign && (
+        <CampaignQualificationModal
+          campaign={qualificationCampaign}
+          onClose={() => setQualificationCampaign(null)}
         />
       )}
     </div>
@@ -542,6 +560,169 @@ function CampaignReportModal({
   )
 }
 
+function CampaignQualificationModal({
+  campaign,
+  onClose,
+}: {
+  campaign: CampaignItem
+  onClose: () => void
+}) {
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [cfg, setCfg] = useState<QualificationConfig | null>(null)
+  const [questionsText, setQuestionsText] = useState('')
+  const [scoringText, setScoringText] = useState('')
+  const [classifyText, setClassifyText] = useState('')
+  const [sessions, setSessions] = useState<QualificationSessionListItem[]>([])
+
+  function loadAll() {
+    setLoading(true)
+    Promise.all([
+      qualificationApi.getConfig(campaign.id),
+      qualificationApi.listSessions(campaign.id, 200),
+    ])
+      .then(([cfgRes, sesRes]) => {
+        setCfg(cfgRes.data)
+        setQuestionsText(JSON.stringify(cfgRes.data.questions_json ?? [], null, 2))
+        setScoringText(JSON.stringify(cfgRes.data.scoring_rules_json ?? {}, null, 2))
+        setClassifyText(JSON.stringify(cfgRes.data.classification_rules_json ?? {}, null, 2))
+        setSessions(sesRes.data.sessions ?? [])
+      })
+      .catch((err) => setError(getApiErrorMessage(err)))
+      .finally(() => setLoading(false))
+  }
+
+  useEffect(() => {
+    loadAll()
+  }, [campaign.id])
+
+  function saveConfig() {
+    if (!cfg) return
+    setSaving(true)
+    setError('')
+    try {
+      const questions = JSON.parse(questionsText)
+      const scoring = JSON.parse(scoringText)
+      const classify = JSON.parse(classifyText)
+      qualificationApi.saveConfig(campaign.id, {
+        enabled: cfg.enabled,
+        notify_lawyer: cfg.notify_lawyer,
+        final_webhook_url: cfg.final_webhook_url,
+        version: cfg.version,
+        questions_json: questions,
+        scoring_rules_json: scoring,
+        classification_rules_json: classify,
+      })
+        .then((r) => {
+          setCfg(r.data)
+          setQuestionsText(JSON.stringify(r.data.questions_json ?? [], null, 2))
+          setScoringText(JSON.stringify(r.data.scoring_rules_json ?? {}, null, 2))
+          setClassifyText(JSON.stringify(r.data.classification_rules_json ?? {}, null, 2))
+        })
+        .catch((err) => setError(getApiErrorMessage(err)))
+        .finally(() => setSaving(false))
+    } catch {
+      setSaving(false)
+      setError('JSON inválido em perguntas/regras.')
+    }
+  }
+
+  return (
+    <div className="campaigns-modal" role="dialog" aria-modal="true">
+      <div className="campaigns-modal-backdrop" onClick={onClose} />
+      <div className="campaigns-modal-content campaigns-edit-modal">
+        <h2>Qualificação da campanha</h2>
+        <p className="campaigns-form-hint">{campaign.name}</p>
+        {loading && <p className="campaigns-loading">Carregando…</p>}
+        {error && <div className="campaigns-form-error">{error}</div>}
+        {cfg && (
+          <>
+            <label className="campaigns-check">
+              <input
+                type="checkbox"
+                checked={cfg.enabled}
+                onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })}
+              />
+              Habilitar qualificação A-E
+            </label>
+            <label className="campaigns-check">
+              <input
+                type="checkbox"
+                checked={cfg.notify_lawyer}
+                onChange={(e) => setCfg({ ...cfg, notify_lawyer: e.target.checked })}
+              />
+              Notificar advogado ao concluir
+            </label>
+            <label>
+              Webhook final da qualificação (opcional)
+              <input
+                value={cfg.final_webhook_url ?? ''}
+                onChange={(e) => setCfg({ ...cfg, final_webhook_url: e.target.value || null })}
+                placeholder="https://.../webhook/final-qualificacao"
+              />
+            </label>
+            <label>
+              Perguntas (JSON)
+              <textarea rows={6} value={questionsText} onChange={(e) => setQuestionsText(e.target.value)} />
+            </label>
+            <label>
+              Regras de pontuação (JSON)
+              <textarea rows={6} value={scoringText} onChange={(e) => setScoringText(e.target.value)} />
+            </label>
+            <label>
+              Regras de classificação (JSON)
+              <textarea rows={4} value={classifyText} onChange={(e) => setClassifyText(e.target.value)} />
+            </label>
+            <div className="campaigns-form-actions">
+              <button type="button" onClick={saveConfig} disabled={saving}>
+                {saving ? 'Salvando…' : 'Salvar qualificação'}
+              </button>
+              <button type="button" onClick={loadAll}>Atualizar sessões</button>
+            </div>
+            <fieldset className="campaigns-fieldset">
+              <legend>Sessões de qualificação (lead x campanha)</legend>
+              {sessions.length === 0 ? (
+                <p className="campaigns-form-hint">Sem sessões ainda.</p>
+              ) : (
+                <div className="campaigns-replies-table-wrap">
+                  <table className="campaigns-replies-table">
+                    <thead>
+                      <tr>
+                        <th>Lead</th>
+                        <th>Telefone</th>
+                        <th>Status</th>
+                        <th>Score</th>
+                        <th>Classificação</th>
+                        <th>Respostas</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sessions.map((s) => (
+                        <tr key={s.session_id}>
+                          <td>{s.lead_name || `#${s.lead_id ?? s.session_id}`}</td>
+                          <td>{s.lead_phone}</td>
+                          <td>{s.status}</td>
+                          <td>{s.score_total}</td>
+                          <td>{s.classification || '—'}</td>
+                          <td>{s.answers_count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </fieldset>
+          </>
+        )}
+        <div className="campaigns-form-actions">
+          <button type="button" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CampaignForm({
   lists,
   onClose,
@@ -554,7 +735,6 @@ function CampaignForm({
   const [name, setName] = useState('')
   const [listId, setListId] = useState<number | ''>('')
   const [type, setType] = useState<'immediate' | 'scheduled'>('immediate')
-  const [campaignWebhookUrl, setCampaignWebhookUrl] = useState('')
   const [responseKeywords, setResponseKeywords] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -568,8 +748,7 @@ function CampaignForm({
     setError('')
     setLoading(true)
     const content: Record<string, unknown> = { type: 'text', text: '' }
-    const w = campaignWebhookUrl.trim()
-    if (w) content.campaign_webhook_url = w
+    content.campaign_webhook_url = FIXED_WEBHOOK_URL
     const kw = responseKeywords
       .split(',')
       .map((k) => k.trim())
@@ -623,14 +802,9 @@ function CampaignForm({
               <option value="scheduled">Agendada</option>
             </select>
           </label>
-          <label>
-            Webhook n8n (opcional)
-            <input
-              value={campaignWebhookUrl}
-              onChange={(e) => setCampaignWebhookUrl(e.target.value)}
-              placeholder="https://seu-n8n/webhook/..."
-            />
-          </label>
+          <p className="campaigns-form-hint">
+            Webhook n8n fixo desta operação: <code>{FIXED_WEBHOOK_URL}</code>
+          </p>
           <label>
             Palavras-chave (opcional — obrigatórias no texto para disparar o n8n; vão também em matched_keywords)
             <input
@@ -678,9 +852,6 @@ function CampaignEditForm({
   const [contentMediaMimetype, setContentMediaMimetype] = useState((content.media_mimetype as string) || '')
   const [contentMediaFilename, setContentMediaFilename] = useState((content.media_filename as string) || '')
   const [contentCaption, setContentCaption] = useState((content.caption as string) || '')
-  const [campaignWebhookUrl, setCampaignWebhookUrl] = useState(
-    String((content.campaign_webhook_url as string) || (content.response_webhook_url as string) || '')
-  )
   const [responseKeywords, setResponseKeywords] = useState(
     Array.isArray(content.response_keywords)
       ? (content.response_keywords as string[]).join(', ')
@@ -715,10 +886,7 @@ function CampaignEditForm({
       contentPayload.media_mimetype = mediaMimetype
       contentPayload.media_filename = mediaFilename
     }
-    const w = campaignWebhookUrl.trim()
-    if (w) {
-      contentPayload.campaign_webhook_url = w
-    }
+    contentPayload.campaign_webhook_url = FIXED_WEBHOOK_URL
     const kw = responseKeywords
       .split(',')
       .map((k) => k.trim())
@@ -878,14 +1046,9 @@ function CampaignEditForm({
                 </label>
               </>
             )}
-            <label>
-              Webhook n8n (opcional — só quando o lead responder)
-              <input
-                value={campaignWebhookUrl}
-                onChange={(e) => setCampaignWebhookUrl(e.target.value)}
-                placeholder="https://seu-n8n/webhook/..."
-              />
-            </label>
+            <p className="campaigns-form-hint">
+              Webhook n8n fixo desta operação: <code>{FIXED_WEBHOOK_URL}</code>
+            </p>
             <label>
               Palavras-chave (opcional — se preenchidas, o n8n só é chamado se alguma aparecer na resposta)
               <input

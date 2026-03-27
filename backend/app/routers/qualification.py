@@ -28,6 +28,8 @@ from app.schemas.qualification import (
     QualificationAnswerItem,
     QualificationConfigBody,
     QualificationConfigResponse,
+    QualificationSessionListItem,
+    QualificationSessionListOut,
     QualificationSessionQueryOut,
     QualificationSessionState,
 )
@@ -184,6 +186,9 @@ def _session_state(
     session: CampaignQualificationSession,
     next_step: str | None,
     webhook_url: str | None,
+    confirmation_message: str | None = None,
+    recorded_step: str | None = None,
+    final_result: dict[str, Any] | None = None,
 ) -> QualificationSessionState:
     ans_rows = (
         db.query(CampaignQualificationAnswer)
@@ -213,6 +218,9 @@ def _session_state(
         answers=answers,
         webhook_sent=session.notified_at is not None,
         webhook_url=webhook_url,
+        confirmation_message=confirmation_message,
+        recorded_step=recorded_step,
+        final_result=final_result,
     )
 
 
@@ -313,6 +321,45 @@ def get_session_state(
         found=True,
         state=_session_state(db, session, next_step, cfg.final_webhook_url),
     )
+
+
+@router.get("/campaigns/{campaign_id}/sessions", response_model=QualificationSessionListOut)
+def list_campaign_sessions(
+    campaign_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(200, ge=1, le=1000),
+):
+    tenant_id = user.tenant_id
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada.")
+    rows = (
+        db.query(CampaignQualificationSession)
+        .filter(
+            CampaignQualificationSession.tenant_id == tenant_id,
+            CampaignQualificationSession.campaign_id == campaign_id,
+        )
+        .order_by(desc(CampaignQualificationSession.id))
+        .limit(limit)
+        .all()
+    )
+    out = [
+        QualificationSessionListItem(
+            session_id=s.id,
+            lead_id=s.lead_id,
+            lead_name=s.lead_name,
+            lead_phone=s.lead_phone,
+            status=s.status,
+            score_total=int(s.score_total or 0),
+            classification=s.classification,
+            answers_count=int(s.answers_count or 0),
+            started_at=s.started_at,
+            completed_at=s.completed_at,
+        )
+        for s in rows
+    ]
+    return QualificationSessionListOut(campaign_id=campaign_id, total=len(out), sessions=out)
 
 
 @router.post("/answer", response_model=QualificationSessionState)
@@ -470,4 +517,22 @@ async def post_qualification_answer(
                 db.commit()
 
     db.refresh(session)
-    return _session_state(db, session, next_step, webhook_url)
+    final_result = (
+        {"classification": session.classification, "score_total": int(session.score_total or 0)}
+        if session.status == "completed"
+        else None
+    )
+    msg = (
+        f"Resposta da etapa {step_key} gravada com sucesso."
+        if session.status != "completed"
+        else "Qualificação concluída com sucesso."
+    )
+    return _session_state(
+        db,
+        session,
+        next_step,
+        webhook_url,
+        confirmation_message=msg,
+        recorded_step=step_key,
+        final_result=final_result,
+    )

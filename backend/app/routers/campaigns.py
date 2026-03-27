@@ -96,8 +96,16 @@ def _n8n_webhook_url(content: dict) -> str:
     return str(
         content.get("campaign_webhook_url")
         or content.get("response_webhook_url")
+        or settings.DEFAULT_CAMPAIGN_WEBHOOK_URL
         or ""
     ).strip()
+
+
+def _with_default_campaign_webhook(content: dict | None) -> dict:
+    out = dict(content or {})
+    if not str(out.get("campaign_webhook_url") or "").strip():
+        out["campaign_webhook_url"] = settings.DEFAULT_CAMPAIGN_WEBHOOK_URL
+    return out
 
 
 def _dt_iso(dt: datetime | None) -> str | None:
@@ -737,7 +745,7 @@ def create_campaign(
         list_id=body.list_id,
         tag_filter_include=body.tag_filter_include,
         tag_filter_exclude=body.tag_filter_exclude,
-        content=body.content,
+        content=_with_default_campaign_webhook(body.content),
         use_global_shielding=body.use_global_shielding,
         shielding_override=body.shielding_override,
         instance_ids=body.instance_ids,
@@ -776,6 +784,8 @@ def update_campaign(
         if not list_row:
             raise HTTPException(status_code=400, detail="Lista não encontrada.")
     for k, v in data.items():
+        if k == "content":
+            v = _with_default_campaign_webhook(v)
         setattr(campaign, k, v)
     db.commit()
     db.refresh(campaign)

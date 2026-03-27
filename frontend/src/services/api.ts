@@ -361,3 +361,42 @@ export const campaignsApi = {
     )
   },
 }
+
+// --- Qualification
+export type QualificationConfig = {
+  tenant_id: number
+  campaign_id: number
+  enabled: boolean
+  questions_json: Array<Record<string, unknown>>
+  scoring_rules_json: Record<string, unknown>
+  classification_rules_json: Record<string, unknown>
+  final_webhook_url: string | null
+  notify_lawyer: boolean
+  version: number
+  updated_at: string | null
+}
+
+export type QualificationSessionListItem = {
+  session_id: number
+  lead_id: number | null
+  lead_name: string | null
+  lead_phone: string
+  status: string
+  score_total: number
+  classification: string | null
+  answers_count: number
+  started_at: string | null
+  completed_at: string | null
+}
+
+export const qualificationApi = {
+  getConfig: (campaignId: number) =>
+    api.get<QualificationConfig>(`/api/qualification/campaigns/${campaignId}/config`),
+  saveConfig: (campaignId: number, data: Partial<QualificationConfig>) =>
+    api.put<QualificationConfig>(`/api/qualification/campaigns/${campaignId}/config`, data),
+  listSessions: (campaignId: number, limit = 200) =>
+    api.get<{ campaign_id: number; total: number; sessions: QualificationSessionListItem[] }>(
+      `/api/qualification/campaigns/${campaignId}/sessions`,
+      { params: { limit } }
+    ),
+}
