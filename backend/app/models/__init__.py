@@ -12,6 +12,11 @@ from app.models.shielding_config import TenantShieldingConfig
 from app.models.campaign import Campaign
 from app.models.campaign_message import CampaignMessage
 from app.models.campaign_inbound_reply import CampaignInboundReply
+from app.models.campaign_qualification import (
+    CampaignQualificationConfig,
+    CampaignQualificationSession,
+    CampaignQualificationAnswer,
+)
 from app.models.reception_context import ReceptionContext
 from app.models.associations import list_leads, lead_tags
 
@@ -28,6 +33,9 @@ __all__ = [
     "Campaign",
     "CampaignMessage",
     "CampaignInboundReply",
+    "CampaignQualificationConfig",
+    "CampaignQualificationSession",
+    "CampaignQualificationAnswer",
     "ReceptionContext",
     "list_leads",
     "lead_tags",

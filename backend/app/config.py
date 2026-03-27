@@ -46,6 +46,8 @@ class Settings(BaseSettings):
 
     # Segredo para POST /api/reception-context (n8n grava contexto após gerar msg_recepcao). Vazio = rota desativada (503).
     RECEPTION_CONTEXT_SECRET: str = os.getenv("RECEPTION_CONTEXT_SECRET", "")
+    # Segredo para /api/qualification (n8n/agente grava respostas da qualificação). Vazio = rotas secretas desativadas.
+    QUALIFICATION_SECRET: str = os.getenv("QUALIFICATION_SECRET", "")
 
     # Onde a Evolution (na internet) deve chamar o MassFlow. É só o domínio do SEU backend, sem path.
     # Ex.: https://massflow-backend.seudominio.com ou https://api.seudominio.com
