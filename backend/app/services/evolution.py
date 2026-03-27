@@ -98,13 +98,15 @@ def send_text_sync(
     number_clean = "".join(c for c in str(number) if c.isdigit())
     if not number_clean:
         raise ValueError("Número inválido")
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=60.0) as client:
         r = client.post(
             f"{base}/message/sendText/{instance_name}",
             json={"number": number_clean, "text": text},
             headers=_headers(api_key),
         )
-        r.raise_for_status()
+        if not r.is_success:
+            err_detail = (r.text or r.reason_phrase or "")[:800]
+            raise ValueError(f"Evolution API {r.status_code}: {err_detail}")
         return r.json() if r.content else {}
 
 
