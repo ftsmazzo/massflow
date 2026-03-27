@@ -7,6 +7,7 @@ import {
   type ListItem,
   type Instance,
   type CampaignInboundReplyItem,
+  type CampaignReport,
 } from '../services/api'
 import { getApiErrorMessage } from '../services/api'
 import './Campaigns.css'
@@ -53,6 +54,7 @@ export default function Campaigns() {
   const [inboundReplies, setInboundReplies] = useState<CampaignInboundReplyItem[]>([])
   const [repliesLoading, setRepliesLoading] = useState(false)
   const [showReplies, setShowReplies] = useState(false)
+  const [reportCampaign, setReportCampaign] = useState<CampaignItem | null>(null)
 
   function load() {
     setLoading(true)
@@ -344,6 +346,13 @@ export default function Campaigns() {
                     </button>
                   </>
                 )}
+                <button
+                  type="button"
+                  className="campaigns-btn-link"
+                  onClick={() => setReportCampaign(c)}
+                >
+                  Relatório
+                </button>
                 {canDeleteCampaign(c) && (
                   <button
                     type="button"
@@ -375,6 +384,160 @@ export default function Campaigns() {
           onSuccess={() => { setEditingCampaign(null); load() }}
         />
       )}
+      {reportCampaign && (
+        <CampaignReportModal
+          campaign={reportCampaign}
+          onClose={() => setReportCampaign(null)}
+        />
+      )}
+    </div>
+  )
+}
+
+function CampaignReportModal({
+  campaign,
+  onClose,
+}: {
+  campaign: CampaignItem
+  onClose: () => void
+}) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [report, setReport] = useState<CampaignReport | null>(null)
+  const [tagName, setTagName] = useState('bloqueio')
+  const [tagging, setTagging] = useState(false)
+  const [tagResult, setTagResult] = useState('')
+
+  useEffect(() => {
+    setLoading(true)
+    setError('')
+    campaignsApi.report(campaign.id)
+      .then((r) => setReport(r.data))
+      .catch((err) => setError(getApiErrorMessage(err)))
+      .finally(() => setLoading(false))
+  }, [campaign.id])
+
+  function handleTagFailedContacts() {
+    const t = tagName.trim()
+    if (!t) {
+      setError('Informe o nome da tag para bloqueio.')
+      return
+    }
+    setTagging(true)
+    setTagResult('')
+    setError('')
+    campaignsApi.tagFailedContacts(campaign.id, t)
+      .then((r) => {
+        setTagResult(
+          `Tag "${r.data.tag_name}" aplicada. Com falha: ${r.data.failed_contacts_found}. Novos marcados: ${r.data.tagged_contacts}.`
+        )
+      })
+      .catch((err) => setError(getApiErrorMessage(err)))
+      .finally(() => setTagging(false))
+  }
+
+  return (
+    <div className="campaigns-modal" role="dialog" aria-modal="true">
+      <div className="campaigns-modal-backdrop" onClick={onClose} />
+      <div className="campaigns-modal-content campaigns-edit-modal">
+        <h2>Relatório da campanha</h2>
+        <p className="campaigns-form-hint">
+          {campaign.name} · {STATUS_LABEL[campaign.status] ?? campaign.status}
+        </p>
+        {loading && <p className="campaigns-loading">Carregando relatório…</p>}
+        {error && <div className="campaigns-form-error">{error}</div>}
+        {report && (
+          <>
+            <div className="campaigns-report-grid">
+              <div><strong>Tentativas:</strong> {report.summary.total_attempts}</div>
+              <div><strong>Enviadas:</strong> {report.summary.total_sent}</div>
+              <div><strong>Falhas:</strong> {report.summary.total_failed}</div>
+              <div><strong>Sem WhatsApp:</strong> {report.summary.failed_without_whatsapp}</div>
+              <div><strong>Respostas:</strong> {report.summary.total_replies}</div>
+              <div><strong>Positivas:</strong> {report.summary.positive_replies}</div>
+            </div>
+
+            <fieldset className="campaigns-fieldset">
+              <legend>Ação rápida de bloqueio</legend>
+              <label>
+                Tag para contatos com falha
+                <input value={tagName} onChange={(e) => setTagName(e.target.value)} placeholder="bloqueio" />
+              </label>
+              <div className="campaigns-form-actions">
+                <button type="button" onClick={handleTagFailedContacts} disabled={tagging}>
+                  {tagging ? 'Aplicando…' : 'Aplicar tag nos contatos com falha'}
+                </button>
+              </div>
+              {tagResult && <p className="campaigns-form-hint">{tagResult}</p>}
+            </fieldset>
+
+            <fieldset className="campaigns-fieldset">
+              <legend>Números com erro no disparo</legend>
+              {report.messages.filter((m) => m.status === 'failed').length === 0 ? (
+                <p className="campaigns-form-hint">Nenhuma falha registrada.</p>
+              ) : (
+                <div className="campaigns-replies-table-wrap">
+                  <table className="campaigns-replies-table">
+                    <thead>
+                      <tr>
+                        <th>Lead</th>
+                        <th>Telefone</th>
+                        <th>Instância</th>
+                        <th>Erro</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.messages.filter((m) => m.status === 'failed').map((m) => (
+                        <tr key={m.id}>
+                          <td>{m.lead_name || `#${m.lead_id}`}</td>
+                          <td>{m.lead_phone || '—'}</td>
+                          <td>{m.evolution_instance_label || (m.evolution_instance_id ?? '—')}</td>
+                          <td>{m.error_message || 'Falha sem detalhe'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </fieldset>
+
+            <fieldset className="campaigns-fieldset">
+              <legend>Respostas desta campanha</legend>
+              {report.replies.length === 0 ? (
+                <p className="campaigns-form-hint">Nenhuma resposta recebida.</p>
+              ) : (
+                <div className="campaigns-replies-table-wrap">
+                  <table className="campaigns-replies-table">
+                    <thead>
+                      <tr>
+                        <th>Quando</th>
+                        <th>Lead</th>
+                        <th>Mensagem</th>
+                        <th>Positiva</th>
+                        <th>Enc. n8n</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {report.replies.map((r) => (
+                        <tr key={r.id}>
+                          <td>{r.created_at ? new Date(r.created_at).toLocaleString() : '—'}</td>
+                          <td>{(r.lead_name || '—') + (r.lead_phone ? ` · ${r.lead_phone}` : '')}</td>
+                          <td className="campaigns-replies-msg">{r.message_text}</td>
+                          <td>{r.is_positive ? `Sim (${r.matched_keywords.join(', ')})` : 'Não'}</td>
+                          <td>{r.forwarded_to_webhook ? 'Sim' : 'Não'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </fieldset>
+          </>
+        )}
+        <div className="campaigns-form-actions">
+          <button type="button" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
     </div>
   )
 }

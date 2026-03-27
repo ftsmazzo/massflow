@@ -279,6 +279,49 @@ export type CampaignInboundReplyItem = {
   created_at: string | null
 }
 
+export type CampaignReportMessageItem = {
+  id: number
+  lead_id: number
+  lead_name: string | null
+  lead_phone: string | null
+  evolution_instance_id: number | null
+  evolution_instance_label: string | null
+  status: string
+  error_message: string | null
+  sent_at: string | null
+  created_at: string | null
+}
+
+export type CampaignReportReplyItem = {
+  id: number
+  lead_id: number
+  lead_name: string | null
+  lead_phone: string | null
+  message_text: string
+  matched_keywords: string[]
+  is_positive: boolean
+  forwarded_to_webhook: boolean
+  webhook_skip_reason: string | null
+  created_at: string | null
+}
+
+export type CampaignReport = {
+  campaign_id: number
+  campaign_name: string
+  campaign_status: string
+  summary: {
+    total_attempts: number
+    total_sent: number
+    total_failed: number
+    total_replies: number
+    positive_replies: number
+    forwarded_replies: number
+    failed_without_whatsapp: number
+  }
+  messages: CampaignReportMessageItem[]
+  replies: CampaignReportReplyItem[]
+}
+
 export const campaignsApi = {
   list: (params?: { status?: string }) => api.get<CampaignItem[]>('/api/campaigns', { params }),
   get: (id: number) => api.get<CampaignItem>(`/api/campaigns/${id}`),
@@ -300,6 +343,13 @@ export const campaignsApi = {
     api.post<{ deleted: number; errors: { id: number; detail: string }[] }>('/api/campaigns/bulk-delete', { ids }),
   inboundReplies: (limit?: number) =>
     api.get<CampaignInboundReplyItem[]>('/api/campaigns/inbound-replies', { params: { limit } }),
+  report: (id: number, params?: { limit_messages?: number; limit_replies?: number }) =>
+    api.get<CampaignReport>(`/api/campaigns/${id}/report`, { params }),
+  tagFailedContacts: (id: number, tag_name: string) =>
+    api.post<{ campaign_id: number; tag_id: number; tag_name: string; tagged_contacts: number; failed_contacts_found: number }>(
+      `/api/campaigns/${id}/tag-failed-contacts`,
+      { tag_name }
+    ),
   start: (id: number) => api.post<{ message: string }>(`/api/campaigns/${id}/start`),
   /** Anexa arquivo de mídia (imagem, vídeo, áudio, documento). Arquivo é enviado e salvo no servidor, não link. */
   uploadMedia: (id: number, file: File) => {

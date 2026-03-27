@@ -67,6 +67,63 @@ class CampaignInboundReplyItem(BaseModel):
         from_attributes = True
 
 
+class CampaignReportMessageItem(BaseModel):
+    id: int
+    lead_id: int
+    lead_name: str | None = None
+    lead_phone: str | None = None
+    evolution_instance_id: int | None = None
+    evolution_instance_label: str | None = None
+    status: str
+    error_message: str | None = None
+    sent_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class CampaignReportReplyItem(BaseModel):
+    id: int
+    lead_id: int
+    lead_name: str | None = None
+    lead_phone: str | None = None
+    message_text: str
+    matched_keywords: list[str] = Field(default_factory=list)
+    is_positive: bool = False
+    forwarded_to_webhook: bool
+    webhook_skip_reason: str | None = None
+    created_at: datetime | None = None
+
+
+class CampaignReportSummary(BaseModel):
+    total_attempts: int = 0
+    total_sent: int = 0
+    total_failed: int = 0
+    total_replies: int = 0
+    positive_replies: int = 0
+    forwarded_replies: int = 0
+    failed_without_whatsapp: int = 0
+
+
+class CampaignReportResponse(BaseModel):
+    campaign_id: int
+    campaign_name: str
+    campaign_status: str
+    summary: CampaignReportSummary
+    messages: list[CampaignReportMessageItem] = Field(default_factory=list)
+    replies: list[CampaignReportReplyItem] = Field(default_factory=list)
+
+
+class CampaignTagFailedContactsBody(BaseModel):
+    tag_name: str = Field(..., min_length=1, max_length=80)
+
+
+class CampaignTagFailedContactsResponse(BaseModel):
+    campaign_id: int
+    tag_id: int
+    tag_name: str
+    tagged_contacts: int = 0
+    failed_contacts_found: int = 0
+
+
 class CampaignResponse(BaseModel):
     """Campanha na resposta."""
     id: int

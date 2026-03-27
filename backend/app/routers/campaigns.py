@@ -24,11 +24,18 @@ from app.models.campaign_inbound_reply import CampaignInboundReply
 from app.models.evolution_instance import EvolutionInstance
 from app.models.lead import Lead
 from app.models.list import List
+from app.models.tag import Tag
 from app.schemas.campaign import (
     CampaignBulkDelete,
     CampaignCreate,
     CampaignInboundReplyItem,
+    CampaignReportMessageItem,
+    CampaignReportReplyItem,
+    CampaignReportResponse,
+    CampaignReportSummary,
     CampaignResponse,
+    CampaignTagFailedContactsBody,
+    CampaignTagFailedContactsResponse,
     CampaignUpdate,
 )
 from app.services.campaign_sender import _resolve_text, run_campaign_sync
@@ -536,6 +543,176 @@ def get_campaign(
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada.")
     return campaign
+
+
+@router.get("/{campaign_id}/report", response_model=CampaignReportResponse)
+def get_campaign_report(
+    campaign_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit_messages: int = Query(500, ge=1, le=2000),
+    limit_replies: int = Query(500, ge=1, le=2000),
+):
+    """Relatório da campanha (tentativas, falhas, respostas e métricas)."""
+    tenant_id = user.tenant_id
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id,
+        Campaign.tenant_id == tenant_id,
+    ).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada.")
+
+    msg_rows = (
+        db.query(
+            CampaignMessage,
+            Lead.name,
+            Lead.phone,
+            EvolutionInstance.display_name,
+            EvolutionInstance.name,
+        )
+        .join(Lead, Lead.id == CampaignMessage.lead_id)
+        .outerjoin(EvolutionInstance, EvolutionInstance.id == CampaignMessage.evolution_instance_id)
+        .filter(CampaignMessage.campaign_id == campaign_id)
+        .order_by(desc(CampaignMessage.id))
+        .limit(limit_messages)
+        .all()
+    )
+    messages: list[CampaignReportMessageItem] = []
+    total_sent = 0
+    total_failed = 0
+    failed_without_whatsapp = 0
+    for m, lead_name, lead_phone, inst_display, inst_name in msg_rows:
+        if m.status == "sent":
+            total_sent += 1
+        elif m.status == "failed":
+            total_failed += 1
+            if (m.error_message or "").strip().lower().startswith("número sem whatsapp"):
+                failed_without_whatsapp += 1
+        messages.append(
+            CampaignReportMessageItem(
+                id=m.id,
+                lead_id=m.lead_id,
+                lead_name=lead_name,
+                lead_phone=lead_phone,
+                evolution_instance_id=m.evolution_instance_id,
+                evolution_instance_label=((inst_display or "").strip() or (inst_name or "").strip() or None),
+                status=m.status or "pending",
+                error_message=m.error_message,
+                sent_at=m.sent_at,
+                created_at=m.created_at,
+            )
+        )
+
+    reply_rows = (
+        db.query(
+            CampaignInboundReply,
+            Lead.name,
+            Lead.phone,
+        )
+        .join(Lead, Lead.id == CampaignInboundReply.lead_id)
+        .filter(CampaignInboundReply.campaign_id == campaign_id)
+        .order_by(desc(CampaignInboundReply.id))
+        .limit(limit_replies)
+        .all()
+    )
+    content = campaign.content or {}
+    keywords = _extract_keywords(content)
+    replies: list[CampaignReportReplyItem] = []
+    positive_replies = 0
+    forwarded_replies = 0
+    for r, lead_name, lead_phone in reply_rows:
+        matched = _matched_keyword_list(r.message_text, keywords) if keywords else []
+        is_positive = bool(matched) if keywords else False
+        if is_positive:
+            positive_replies += 1
+        if r.forwarded_to_webhook:
+            forwarded_replies += 1
+        replies.append(
+            CampaignReportReplyItem(
+                id=r.id,
+                lead_id=r.lead_id,
+                lead_name=lead_name,
+                lead_phone=lead_phone,
+                message_text=r.message_text,
+                matched_keywords=matched,
+                is_positive=is_positive,
+                forwarded_to_webhook=r.forwarded_to_webhook,
+                webhook_skip_reason=r.webhook_skip_reason,
+                created_at=r.created_at,
+            )
+        )
+
+    summary = CampaignReportSummary(
+        total_attempts=len(msg_rows),
+        total_sent=total_sent,
+        total_failed=total_failed,
+        total_replies=len(reply_rows),
+        positive_replies=positive_replies,
+        forwarded_replies=forwarded_replies,
+        failed_without_whatsapp=failed_without_whatsapp,
+    )
+    return CampaignReportResponse(
+        campaign_id=campaign.id,
+        campaign_name=campaign.name,
+        campaign_status=campaign.status,
+        summary=summary,
+        messages=messages,
+        replies=replies,
+    )
+
+
+@router.post("/{campaign_id}/tag-failed-contacts", response_model=CampaignTagFailedContactsResponse)
+def tag_failed_contacts(
+    campaign_id: int,
+    body: CampaignTagFailedContactsBody,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """Aplica tag nos contatos com falha nessa campanha (ex.: bloqueio)."""
+    tenant_id = user.tenant_id
+    campaign = db.query(Campaign).filter(
+        Campaign.id == campaign_id,
+        Campaign.tenant_id == tenant_id,
+    ).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada.")
+
+    tag_name = body.tag_name.strip()
+    if not tag_name:
+        raise HTTPException(status_code=400, detail="Nome da tag obrigatório.")
+    tag = db.query(Tag).filter(Tag.tenant_id == tenant_id, Tag.name == tag_name).first()
+    if not tag:
+        tag = Tag(tenant_id=tenant_id, name=tag_name)
+        db.add(tag)
+        db.flush()
+
+    rows = (
+        db.query(CampaignMessage.lead_id)
+        .join(Lead, Lead.id == CampaignMessage.lead_id)
+        .filter(
+            CampaignMessage.campaign_id == campaign_id,
+            CampaignMessage.status == "failed",
+            Lead.tenant_id == tenant_id,
+        )
+        .distinct()
+        .all()
+    )
+    lead_ids = [lid for (lid,) in rows]
+    tagged = 0
+    if lead_ids:
+        leads = db.query(Lead).filter(Lead.id.in_(lead_ids), Lead.tenant_id == tenant_id).all()
+        for lead in leads:
+            if tag not in lead.tags:
+                lead.tags.append(tag)
+                tagged += 1
+    db.commit()
+    return CampaignTagFailedContactsResponse(
+        campaign_id=campaign_id,
+        tag_id=tag.id,
+        tag_name=tag.name,
+        tagged_contacts=tagged,
+        failed_contacts_found=len(lead_ids),
+    )
 
 
 @router.post("", response_model=CampaignResponse, status_code=201)
