@@ -39,6 +39,9 @@ const TYPE_LABEL: Record<string, string> = {
 const DELETABLE_STATUSES = new Set(['draft', 'cancelled', 'completed', 'scheduled'])
 const FIXED_WEBHOOK_URL = 'https://fabricaia-n8n.90qhxz.easypanel.host/webhook/controle-disparo'
 
+/** Deve coincidir com PURGE_ALL_CAMPAIGNS_CONFIRM no backend. */
+const PURGE_ALL_CAMPAIGNS_CONFIRM = 'LIMPAR_TODAS'
+
 function canDeleteCampaign(c: CampaignItem) {
   return DELETABLE_STATUSES.has(c.status)
 }
@@ -48,6 +51,7 @@ export default function Campaigns() {
   const [lists, setLists] = useState<ListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [successMessage, setSuccessMessage] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [editingCampaign, setEditingCampaign] = useState<CampaignItem | null>(null)
   const [instances, setInstances] = useState<Instance[]>([])
@@ -60,6 +64,9 @@ export default function Campaigns() {
   const [showReplies, setShowReplies] = useState(false)
   const [reportCampaign, setReportCampaign] = useState<CampaignItem | null>(null)
   const [qualificationCampaign, setQualificationCampaign] = useState<CampaignItem | null>(null)
+  const [showPurgeModal, setShowPurgeModal] = useState(false)
+  const [purgeConfirmText, setPurgeConfirmText] = useState('')
+  const [purging, setPurging] = useState(false)
 
   function load() {
     setLoading(true)
@@ -67,6 +74,10 @@ export default function Campaigns() {
       .then((r) => setCampaigns(r.data))
       .catch(() => setError('Falha ao carregar campanhas.'))
       .finally(() => setLoading(false))
+  }
+
+  function clearSuccess() {
+    setSuccessMessage('')
   }
 
   useEffect(() => {
@@ -189,11 +200,29 @@ export default function Campaigns() {
             <strong>Instâncias</strong> com o botão que aplica o webhook na Evolution (todas as linhas de uma vez).
           </p>
         </div>
-        <button type="button" className="campaigns-btn primary" onClick={() => setShowForm(true)}>
-          Nova campanha
-        </button>
+        <div className="campaigns-header-actions">
+          <button
+            type="button"
+            className="campaigns-btn danger campaigns-btn-outline"
+            onClick={() => {
+              setPurgeConfirmText('')
+              clearSuccess()
+              setShowPurgeModal(true)
+            }}
+          >
+            Limpar campanhas
+          </button>
+          <button type="button" className="campaigns-btn primary" onClick={() => setShowForm(true)}>
+            Nova campanha
+          </button>
+        </div>
       </header>
 
+      {successMessage && (
+        <div className="campaigns-success-banner" role="status">
+          {successMessage}
+        </div>
+      )}
       {error && <div className="campaigns-error-banner">{error}</div>}
 
       <section className="campaigns-replies-section">
@@ -407,6 +436,69 @@ export default function Campaigns() {
           campaign={qualificationCampaign}
           onClose={() => setQualificationCampaign(null)}
         />
+      )}
+      {showPurgeModal && (
+        <div className="campaigns-modal" role="dialog" aria-modal="true" aria-labelledby="purge-modal-title">
+          <div className="campaigns-modal-backdrop" onClick={() => !purging && setShowPurgeModal(false)} />
+          <div className="campaigns-modal-content campaigns-edit-modal">
+            <h2 id="purge-modal-title">Limpar todas as campanhas</h2>
+            <p className="campaigns-form-hint">
+              Isso elimina <strong>todas</strong> as campanhas deste tenant (incluindo em andamento), mensagens de
+              disparo, respostas salvas, qualificação e pastas de mídia em <code>uploads/campaigns/</code>. Listas e
+              leads não são apagados. <strong>Não dá para desfazer.</strong>
+            </p>
+            <label>
+              Digite <code>{PURGE_ALL_CAMPAIGNS_CONFIRM}</code> para confirmar
+              <input
+                type="text"
+                autoComplete="off"
+                value={purgeConfirmText}
+                onChange={(e) => setPurgeConfirmText(e.target.value)}
+                placeholder={PURGE_ALL_CAMPAIGNS_CONFIRM}
+                disabled={purging}
+              />
+            </label>
+            <div className="campaigns-form-actions">
+              <button type="button" disabled={purging} onClick={() => setShowPurgeModal(false)}>
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="campaigns-btn danger"
+                disabled={purging || purgeConfirmText.trim() !== PURGE_ALL_CAMPAIGNS_CONFIRM}
+                onClick={() => {
+                  setPurging(true)
+                  setError('')
+                  setSuccessMessage('')
+                  campaignsApi
+                    .purgeAll(purgeConfirmText.trim())
+                    .then((res) => {
+                      setShowPurgeModal(false)
+                      setPurgeConfirmText('')
+                      clearSelection()
+                      setReportCampaign(null)
+                      setQualificationCampaign(null)
+                      setShowForm(false)
+                      setEditingCampaign(null)
+                      setShowReplies(false)
+                      setInboundReplies([])
+                      setSuccessMessage(
+                        `Removidas ${res.data.deleted} campanha(s). Pastas de upload removidas: ${res.data.upload_dirs_removed}.`
+                      )
+                      load()
+                    })
+                    .catch((err) => {
+                      setSuccessMessage('')
+                      setError(getApiErrorMessage(err))
+                    })
+                    .finally(() => setPurging(false))
+                }}
+              >
+                {purging ? 'Removendo…' : 'Confirmar limpeza'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

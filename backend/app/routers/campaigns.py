@@ -4,6 +4,7 @@ Campanhas: CRUD, criação, upload de mídia (arquivo anexado) e disparo em back
 import asyncio
 import logging
 import re
+import shutil
 import unicodedata
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +29,9 @@ from app.models.tag import Tag
 from app.schemas.campaign import (
     CampaignBulkDelete,
     CampaignCreate,
+    CampaignPurgeAllBody,
+    CampaignPurgeAllResponse,
+    PURGE_ALL_CAMPAIGNS_CONFIRM,
     CampaignInboundReplyItem,
     CampaignReportMessageItem,
     CampaignReportReplyItem,
@@ -535,6 +539,52 @@ def bulk_delete_campaigns(
         deleted += 1
     db.commit()
     return {"deleted": deleted, "errors": errors}
+
+
+@router.post("/purge-all", response_model=CampaignPurgeAllResponse)
+def purge_all_campaigns(
+    body: CampaignPurgeAllBody,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Remove **todas** as campanhas do tenant (inclui em andamento), com cascata no banco:
+    mensagens, respostas inbound, qualificação (sessões e respostas).
+    Contextos de recepção com `campaign_id` ficam com referência anulada (SET NULL).
+    Também remove pastas `uploads/campaigns/<id>` quando existirem.
+    """
+    if (body.confirm or "").strip() != PURGE_ALL_CAMPAIGNS_CONFIRM:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Confirmação inválida. Digite exatamente: {PURGE_ALL_CAMPAIGNS_CONFIRM}",
+        )
+    tenant_id = user.tenant_id
+    campaigns = (
+        db.query(Campaign)
+        .filter(Campaign.tenant_id == tenant_id)
+        .order_by(Campaign.id.asc())
+        .all()
+    )
+    if not campaigns:
+        return CampaignPurgeAllResponse(deleted=0, upload_dirs_removed=0)
+
+    upload_dirs_removed = 0
+    for c in campaigns:
+        d = UPLOADS_DIR / "campaigns" / str(c.id)
+        if d.is_dir():
+            try:
+                shutil.rmtree(d)
+                upload_dirs_removed += 1
+            except OSError as exc:
+                logger.warning("purge_all: falha ao remover pasta %s: %s", d, exc)
+
+    deleted = 0
+    for c in campaigns:
+        db.delete(c)
+        deleted += 1
+    db.commit()
+    logger.info("purge_all_campaigns tenant_id=%s deleted=%s", tenant_id, deleted)
+    return CampaignPurgeAllResponse(deleted=deleted, upload_dirs_removed=upload_dirs_removed)
 
 
 @router.get("/{campaign_id}", response_model=CampaignResponse)

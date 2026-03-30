@@ -47,6 +47,23 @@ class CampaignBulkDelete(BaseModel):
     ids: list[int] = Field(..., min_length=1, max_length=200)
 
 
+PURGE_ALL_CAMPAIGNS_CONFIRM = "LIMPAR_TODAS"
+
+
+class CampaignPurgeAllBody(BaseModel):
+    """Confirmação obrigatória para apagar todas as campanhas do tenant (irreversível)."""
+    confirm: str = Field(
+        ...,
+        description="Digite exatamente LIMPAR_TODAS para confirmar.",
+    )
+
+
+class CampaignPurgeAllResponse(BaseModel):
+    """Resultado do purge de campanhas."""
+    deleted: int = Field(..., description="Campanhas removidas.")
+    upload_dirs_removed: int = Field(..., description="Pastas campaigns/<id> removidas em uploads.")
+
+
 class CampaignInboundReplyItem(BaseModel):
     """Resposta de lead recebida (persistida no MassFlow)."""
     id: int

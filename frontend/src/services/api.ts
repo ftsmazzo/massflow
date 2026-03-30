@@ -341,6 +341,9 @@ export const campaignsApi = {
   delete: (id: number) => api.delete(`/api/campaigns/${id}`),
   bulkDelete: (ids: number[]) =>
     api.post<{ deleted: number; errors: { id: number; detail: string }[] }>('/api/campaigns/bulk-delete', { ids }),
+  /** Remove todas as campanhas do tenant (irreversível). `confirm` deve ser exatamente LIMPAR_TODAS. */
+  purgeAll: (confirm: string) =>
+    api.post<{ deleted: number; upload_dirs_removed: number }>('/api/campaigns/purge-all', { confirm }),
   inboundReplies: (limit?: number) =>
     api.get<CampaignInboundReplyItem[]>('/api/campaigns/inbound-replies', { params: { limit } }),
   report: (id: number, params?: { limit_messages?: number; limit_replies?: number }) =>
