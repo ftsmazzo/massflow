@@ -14,6 +14,7 @@ from fastapi import BackgroundTasks
 from app.config import settings
 from app.database import SessionLocal
 from app.services.saas_reconciliation import reconcile_lead_from_saas_chat
+from app.services.saas_chat_messages import saas_database_configured
 
 logger = logging.getLogger("massflow.reconcile")
 
@@ -92,7 +93,7 @@ def attach_reconcile_jobs_after_context_consumed(
         "reconcile_saas_scheduled": False,
         "reconcile_saas_retry_delays_seconds": [],
     }
-    if not (settings.SAAS_CHAT_HISTORY_DATABASE_URL or "").strip():
+    if not saas_database_configured():
         return out
 
     delays = _parse_retry_delays()

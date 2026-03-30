@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     # Opcional: Postgres externo (ex.: tabela chatMessages do SaaS) para reconciliação de qualificação.
     # Vazio = funcionalidade não usa segundo banco (implementação do job pode checar isso).
     SAAS_CHAT_HISTORY_DATABASE_URL: str = os.getenv("SAAS_CHAT_HISTORY_DATABASE_URL", "")
+    # Alternativa à URL única: host, usuário, senha e banco separados (senha com @ ou : sem URL-encode manual).
+    SAAS_PG_HOST: str = os.getenv("SAAS_PG_HOST", "")
+    SAAS_PG_PORT: int = int(os.getenv("SAAS_PG_PORT", "5432"))
+    SAAS_PG_USER: str = os.getenv("SAAS_PG_USER", "")
+    SAAS_PG_PASSWORD: str = os.getenv("SAAS_PG_PASSWORD", "")
+    SAAS_PG_DATABASE: str = os.getenv("SAAS_PG_DATABASE", "")
+    SAAS_PG_SSLMODE: str = os.getenv("SAAS_PG_SSLMODE", "require")
     # Nome da tabela no banco SaaS (camelCase → usar aspas na query). Ex.: chatMessages
     SAAS_CHAT_MESSAGES_TABLE: str = os.getenv("SAAS_CHAT_MESSAGES_TABLE", "chatMessages")
     # Retries da reconciliação SaaS após consumir contexto (segundos após a resposta HTTP).

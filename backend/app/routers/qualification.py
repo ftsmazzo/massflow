@@ -30,6 +30,7 @@ from app.schemas.qualification import (
 from app.services import qualification_service as qs
 from app.services.campaign_resolution import resolve_campaign_id_for_qualification
 from app.services.reconciliation_trigger import run_reconcile_safe
+from app.services.saas_chat_messages import saas_database_configured
 from app.services.saas_reconciliation import reconcile_lead_from_saas_chat
 
 router = APIRouter(prefix="/qualification", tags=["Qualification"])
@@ -240,7 +241,7 @@ def post_qualification_answer(
         raise _map_qualification_value_error(e) from e
     cfg = qs.ensure_config(db, body.tenant_id, body.campaign_id)
     if (
-        (settings.SAAS_CHAT_HISTORY_DATABASE_URL or "").strip()
+        saas_database_configured()
         and bool(getattr(cfg, "reconcile_from_saas_chat", False))
         and not state.completed
     ):
@@ -268,13 +269,14 @@ def post_reconcile_from_saas(
 ):
     """
     Lê mensagens do Postgres SaaS (chatMessages), grava etapas faltantes e opcionalmente notifica WhatsApp.
-    Requer `SAAS_CHAT_HISTORY_DATABASE_URL` e campanha com reconciliação habilitada.
+    Requer Postgres SaaS (SAAS_PG_* ou SAAS_CHAT_HISTORY_DATABASE_URL) e campanha com reconciliação habilitada.
     """
     _require_qualification_secret(request)
-    if not (settings.SAAS_CHAT_HISTORY_DATABASE_URL or "").strip():
+    if not saas_database_configured():
         raise HTTPException(
             status_code=503,
-            detail="SAAS_CHAT_HISTORY_DATABASE_URL não configurada no backend.",
+            detail="Postgres SaaS não configurado: defina SAAS_PG_HOST, SAAS_PG_USER, SAAS_PG_DATABASE "
+            "(e senha) ou SAAS_CHAT_HISTORY_DATABASE_URL.",
         )
     try:
         return reconcile_lead_from_saas_chat(

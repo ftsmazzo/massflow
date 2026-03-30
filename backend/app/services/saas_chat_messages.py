@@ -12,6 +12,7 @@ from typing import Any
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.engine.url import make_url
+from urllib.parse import quote_plus
 
 from app.config import settings
 
@@ -45,14 +46,37 @@ def normalize_saas_database_url(url: str) -> str:
     return fixed
 
 
+def get_effective_saas_database_url() -> str:
+    """
+    Se SAAS_PG_HOST + SAAS_PG_USER + SAAS_PG_DATABASE estiverem definidos, monta a URL com
+    quote_plus na senha (aceita @, :, etc. sem editar a string na mão).
+    Caso contrário usa SAAS_CHAT_HISTORY_DATABASE_URL (com normalização @porta@host).
+    """
+    h = (getattr(settings, "SAAS_PG_HOST", "") or "").strip()
+    user = (getattr(settings, "SAAS_PG_USER", "") or "").strip()
+    dbn = (getattr(settings, "SAAS_PG_DATABASE", "") or "").strip()
+    if h and user and dbn:
+        pw = getattr(settings, "SAAS_PG_PASSWORD", "") or ""
+        port = int(getattr(settings, "SAAS_PG_PORT", 5432) or 5432)
+        ssl = (getattr(settings, "SAAS_PG_SSLMODE", "require") or "require").strip()
+        pu, pp = quote_plus(user), quote_plus(pw)
+        return f"postgresql://{pu}:{pp}@{h}:{port}/{dbn}?sslmode={ssl}"
+    raw = (settings.SAAS_CHAT_HISTORY_DATABASE_URL or "").strip()
+    return normalize_saas_database_url(raw)
+
+
+def saas_database_configured() -> bool:
+    return bool(get_effective_saas_database_url().strip())
+
+
 def _validate_saas_url(url: str) -> None:
     """Garante que a URL do Postgres SaaS seja parseável e o host não contenha '@'."""
     try:
         u = make_url(url)
     except Exception as e:
         raise ValueError(
-            "SAAS_CHAT_HISTORY_DATABASE_URL inválida. Formato: "
-            "postgresql://usuario:senha@HOST:PORTA/banco?sslmode=require"
+            "URL do Postgres SaaS inválida. Use SAAS_PG_* (host, user, password, database) "
+            "ou SAAS_CHAT_HISTORY_DATABASE_URL no formato postgresql://user:pass@HOST:PORT/db"
         ) from e
     host = (u.host or "").strip()
     if "@" in host:
@@ -74,9 +98,12 @@ class SaaSChatRow:
 
 
 def _engine() -> Engine:
-    url = normalize_saas_database_url(settings.SAAS_CHAT_HISTORY_DATABASE_URL or "")
+    url = get_effective_saas_database_url()
     if not url:
-        raise RuntimeError("SAAS_CHAT_HISTORY_DATABASE_URL não configurada.")
+        raise RuntimeError(
+            "Postgres SaaS não configurado: defina SAAS_PG_HOST/USER/DATABASE "
+            "ou SAAS_CHAT_HISTORY_DATABASE_URL."
+        )
     _validate_saas_url(url)
     return create_engine(url, pool_pre_ping=True, pool_size=2, max_overflow=2)
 
