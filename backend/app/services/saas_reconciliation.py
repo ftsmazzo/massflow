@@ -112,13 +112,13 @@ def drop_leading_permission_row(
     cfg: CampaignQualificationConfig,
 ) -> list[SaaSChatRow]:
     """
-    Remove a primeira linha quando for só o “portão” de permissão (agente pede para perguntar,
-    lead responde pode/continue/siga). A etapa A passa a ser mapeada a partir da segunda linha.
+    Remove a primeira linha quando o assistente só pede permissão para continuar e o lead responde
+    com reconhecimento curto (pode, siga, etc.). A triagem A–E passa a ser alinhada a partir da linha
+    seguinte. O disparo da campanha pode já ter aberto o fio com o lead; isso não exige “juntar”
+    mensagens no agente — apenas reflete como o SaaS gravou a primeira troca após o disparo.
 
-    Se o `botMessage` da primeira linha **já contiver** o texto da pergunta 1 da campanha (ou o gancho
-    “quais … dívidas”), não removemos: é intro+Q1 na mesma bolha — a resposta “pode” não é a etapa A,
-    mas dropar a linha apagaria o texto da Q1; nesse caso o mapeamento same-line para A fica limitado
-    (recomenda-se separar permissão e Q1 em linhas distintas no agente).
+    Se o texto do assistente na primeira linha **já contiver** a pergunta 1 da campanha (ou o gancho
+    “quais … dívidas”), não removemos para não perder o enunciado vindo do histórico.
     """
     if not rows or not steps:
         return rows
@@ -308,9 +308,12 @@ def reconcile_lead_from_saas_chat(
     lead_phone: str,
     lead_id: int | None = None,
     lead_name: str | None = None,
+    *,
+    send_whatsapp: bool = True,
 ) -> dict[str, Any]:
     """
-    Busca mensagens no SaaS, grava etapas faltantes e opcionalmente notifica WhatsApp.
+    Busca mensagens no SaaS, grava etapas faltantes, devolve o texto classificatório (resumo) e,
+    se `send_whatsapp` e a config permitirem, envia o WhatsApp de conclusão como no fluxo normal.
     """
     phone = qs.normalize_phone(lead_phone)
     if not phone:
@@ -339,9 +342,23 @@ def reconcile_lead_from_saas_chat(
         if not lead_done:
             lead_done = db.query(Lead).filter(Lead.tenant_id == tenant_id, Lead.phone == phone).first()
         last_done = qs.build_session_state_for_session(db, tenant_id, campaign_id, session)
-        notification_done = _try_reconcile_whatsapp_notify(
-            db, cfg, tenant_id, campaign_id, phone, lead_done, lead_name, last_done,
-        )
+        ln = lead_name or (lead_done.name if lead_done else None)
+        summary_text = None
+        if last_done.completed:
+            summary_text = _build_notify_summary(
+                tenant_id,
+                campaign_id,
+                phone,
+                ln,
+                last_done.classification,
+                last_done.score_total,
+                last_done.answers,
+            )
+        notification_done = False
+        if send_whatsapp:
+            notification_done = _try_reconcile_whatsapp_notify(
+                db, cfg, tenant_id, campaign_id, phone, lead_done, lead_name, last_done,
+            )
         return {
             "ok": True,
             "skipped": True,
@@ -350,6 +367,8 @@ def reconcile_lead_from_saas_chat(
             "classification": session.classification,
             "steps_applied": [],
             "notification_sent": notification_done,
+            "classification_summary_text": summary_text,
+            "send_whatsapp": send_whatsapp,
         }
 
     saas_tid = getattr(cfg, "saas_tenant_id", None)
@@ -430,9 +449,24 @@ def reconcile_lead_from_saas_chat(
     if session and session.status == "completed" and last_state is None:
         last_state = qs.build_session_state_for_session(db, tenant_id, campaign_id, session)
 
-    notification_sent = _try_reconcile_whatsapp_notify(
-        db, cfg, tenant_id, campaign_id, phone, lead, lead_name, last_state,
-    )
+    ln = lead_name or (lead.name if lead else None)
+    summary_text = None
+    if last_state and last_state.completed:
+        summary_text = _build_notify_summary(
+            tenant_id,
+            campaign_id,
+            phone,
+            ln,
+            last_state.classification,
+            last_state.score_total,
+            last_state.answers,
+        )
+
+    notification_sent = False
+    if send_whatsapp:
+        notification_sent = _try_reconcile_whatsapp_notify(
+            db, cfg, tenant_id, campaign_id, phone, lead, lead_name, last_state,
+        )
 
     msg = (
         f"Reconciliação aplicada: {', '.join(steps_applied)}."
@@ -447,6 +481,8 @@ def reconcile_lead_from_saas_chat(
         "classification": last_state.classification if last_state else None,
         "steps_applied": steps_applied,
         "notification_sent": notification_sent,
+        "classification_summary_text": summary_text,
+        "send_whatsapp": send_whatsapp,
     }
 
 

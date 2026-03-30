@@ -295,9 +295,14 @@ def post_reconcile_from_saas(
     lead_phone: str = Query(...),
     lead_id: int | None = Query(None),
     lead_name: str | None = Query(None),
+    send_whatsapp: bool = Query(
+        True,
+        description="Se false, aplica respostas e devolve classification_summary_text sem enviar WhatsApp.",
+    ),
 ):
     """
-    Lê mensagens do Postgres SaaS (chatMessages), grava etapas faltantes e opcionalmente notifica WhatsApp.
+    Lê mensagens do Postgres SaaS (chatMessages), grava etapas faltantes, devolve `classification_summary_text`
+    (mesmo texto do resumo classificatório) e, com send_whatsapp=true, envia o WhatsApp de conclusão como no fluxo real.
     Requer Postgres SaaS (SAAS_PG_* ou SAAS_CHAT_HISTORY_DATABASE_URL) e campanha com reconciliação habilitada.
     """
     _require_qualification_secret(request)
@@ -315,6 +320,7 @@ def post_reconcile_from_saas(
             lead_phone=lead_phone,
             lead_id=lead_id,
             lead_name=lead_name,
+            send_whatsapp=send_whatsapp,
         )
     except ValueError as e:
         raise _map_qualification_value_error(e) from e
