@@ -199,6 +199,52 @@ def build_session_state(
     )
 
 
+def build_session_state_for_session(
+    db: Session,
+    tenant_id: int,
+    campaign_id: int,
+    session: CampaignQualificationSession,
+) -> QualificationSessionState:
+    """
+    Monta QualificationSessionState a partir da sessão persistida (útil após reconciliação
+    quando nenhuma etapa nova foi aplicada no loop mas a sessão já está completa).
+    """
+    cfg = ensure_config(db, tenant_id, campaign_id)
+    campaign = (
+        db.query(Campaign)
+        .filter(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id)
+        .first()
+    )
+    campaign_content = (campaign.content or {}) if campaign else {}
+    steps = ordered_steps(cfg)
+    ans_rows = (
+        db.query(CampaignQualificationAnswer.step_key)
+        .filter(CampaignQualificationAnswer.session_id == session.id)
+        .all()
+    )
+    answered_steps = {k for (k,) in ans_rows}
+    next_step = next((s for s in steps if s not in answered_steps), None)
+    webhook_url = (
+        cfg.final_webhook_url
+        or str(campaign_content.get("campaign_webhook_url") or "").strip()
+        or None
+    )
+    final_result = (
+        {"classification": session.classification, "score_total": int(session.score_total or 0)}
+        if session.status == "completed"
+        else None
+    )
+    return build_session_state(
+        db,
+        session,
+        next_step,
+        webhook_url,
+        confirmation_message=None,
+        recorded_step=None,
+        final_result=final_result,
+    )
+
+
 def _send_webhook_sync(webhook_url: str, payload: dict[str, Any]) -> bool:
     try:
         with httpx.Client(timeout=20.0, verify=settings.WEBHOOK_VERIFY_SSL) as client:
