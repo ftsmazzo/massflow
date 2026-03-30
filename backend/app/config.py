@@ -19,6 +19,10 @@ class Settings(BaseSettings):
         "postgresql://postgres:postgres@localhost:5432/massflow"
     )
 
+    # Opcional: Postgres externo (ex.: tabela chatMessages do SaaS) para reconciliação de qualificação.
+    # Vazio = funcionalidade não usa segundo banco (implementação do job pode checar isso).
+    SAAS_CHAT_HISTORY_DATABASE_URL: str = os.getenv("SAAS_CHAT_HISTORY_DATABASE_URL", "")
+
     # JWT
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "change-this-in-production")
     JWT_ALGORITHM: str = os.getenv("JWT_ALGORITHM", "HS256")
