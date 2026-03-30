@@ -119,6 +119,19 @@ def ensure_config(db: Session, tenant_id: int, campaign_id: int) -> CampaignQual
     return cfg
 
 
+def effective_webhook_url_for_campaign(
+    db: Session, tenant_id: int, campaign_id: int, cfg: CampaignQualificationConfig
+) -> str | None:
+    """Mesma regra do POST /answer: config ou campaign.content.campaign_webhook_url."""
+    campaign = (
+        db.query(Campaign)
+        .filter(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id)
+        .first()
+    )
+    content = (campaign.content or {}) if campaign else {}
+    return cfg.final_webhook_url or str(content.get("campaign_webhook_url") or "").strip() or None
+
+
 def ordered_steps(cfg: CampaignQualificationConfig) -> list[str]:
     q = cfg.questions_json if isinstance(cfg.questions_json, list) else []
     steps: list[str] = []

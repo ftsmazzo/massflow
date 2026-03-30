@@ -69,6 +69,8 @@ class QualificationSessionState(BaseModel):
 class QualificationSessionQueryOut(BaseModel):
     found: bool
     state: QualificationSessionState | None = None
+    # Campanha usada na consulta (informada ou resolvida pelo último inbound).
+    campaign_id: int | None = None
 
 
 class QualificationSessionListItem(BaseModel):

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,8 @@ from app.schemas.qualification import (
     QualificationSessionState,
 )
 from app.services import qualification_service as qs
+from app.services.campaign_resolution import resolve_campaign_id_for_qualification
+from app.services.reconciliation_trigger import run_reconcile_safe
 from app.services.saas_reconciliation import reconcile_lead_from_saas_chat
 
 router = APIRouter(prefix="/qualification", tags=["Qualification"])
@@ -132,26 +134,36 @@ def get_session_state(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
     tenant_id: int = Query(...),
-    campaign_id: int = Query(...),
+    campaign_id: int | None = Query(
+        None,
+        description="Opcional: se omitido, resolve pelo último campaign_inbound_replies do lead.",
+    ),
     lead_phone: str = Query(...),
 ):
     _require_qualification_secret(request)
     phone = qs.normalize_phone(lead_phone)
     if not phone:
         raise HTTPException(status_code=422, detail="lead_phone inválido.")
+
+    cid = campaign_id
+    if cid is None:
+        cid = resolve_campaign_id_for_qualification(db, tenant_id, phone, None, None)
+        if cid is None:
+            return QualificationSessionQueryOut(found=False, state=None, campaign_id=None)
+
     session = (
         db.query(CampaignQualificationSession)
         .filter(
             CampaignQualificationSession.tenant_id == tenant_id,
-            CampaignQualificationSession.campaign_id == campaign_id,
+            CampaignQualificationSession.campaign_id == cid,
             CampaignQualificationSession.lead_phone == phone,
         )
         .order_by(desc(CampaignQualificationSession.id))
         .first()
     )
     if not session:
-        return QualificationSessionQueryOut(found=False, state=None)
-    cfg = qs.ensure_config(db, tenant_id, campaign_id)
+        return QualificationSessionQueryOut(found=False, state=None, campaign_id=cid)
+    cfg = qs.ensure_config(db, tenant_id, cid)
     steps = qs.ordered_steps(cfg)
     ans_steps = {
         a.step_key
@@ -160,9 +172,18 @@ def get_session_state(
         ).all()
     }
     next_step = next((s for s in steps if s not in ans_steps), None)
+    webhook_url = qs.effective_webhook_url_for_campaign(db, tenant_id, cid, cfg)
+    final_result = (
+        {"classification": session.classification, "score_total": int(session.score_total or 0)}
+        if session.status == "completed"
+        else None
+    )
     return QualificationSessionQueryOut(
         found=True,
-        state=qs.build_session_state(db, session, next_step, cfg.final_webhook_url),
+        state=qs.build_session_state(
+            db, session, next_step, webhook_url, final_result=final_result
+        ),
+        campaign_id=cid,
     )
 
 
@@ -210,12 +231,29 @@ def post_qualification_answer(
     body: QualificationAnswerIn,
     request: Request,
     db: Annotated[Session, Depends(get_db)],
+    background_tasks: BackgroundTasks,
 ):
     _require_qualification_secret(request)
     try:
-        return qs.apply_qualification_answer(db, body)
+        state = qs.apply_qualification_answer(db, body)
     except ValueError as e:
         raise _map_qualification_value_error(e) from e
+    cfg = qs.ensure_config(db, body.tenant_id, body.campaign_id)
+    if (
+        (settings.SAAS_CHAT_HISTORY_DATABASE_URL or "").strip()
+        and bool(getattr(cfg, "reconcile_from_saas_chat", False))
+        and not state.completed
+    ):
+        background_tasks.add_task(
+            run_reconcile_safe,
+            body.tenant_id,
+            body.campaign_id,
+            qs.normalize_phone(body.lead_phone),
+            body.lead_id,
+            body.lead_name,
+            "after_answer",
+        )
+    return state
 
 
 @router.post("/reconcile-from-saas")
