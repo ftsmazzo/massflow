@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     SAAS_CHAT_HISTORY_DATABASE_URL: str = os.getenv("SAAS_CHAT_HISTORY_DATABASE_URL", "")
     # Nome da tabela no banco SaaS (camelCase → usar aspas na query). Ex.: chatMessages
     SAAS_CHAT_MESSAGES_TABLE: str = os.getenv("SAAS_CHAT_MESSAGES_TABLE", "chatMessages")
+    # Segunda passagem da reconciliação automática (segundos) após consumir contexto de recepção.
+    RECONCILE_SAAS_DELAY_SECONDS: int = int(os.getenv("RECONCILE_SAAS_DELAY_SECONDS", "90"))
 
     # JWT
     JWT_SECRET_KEY: str = os.getenv("JWT_SECRET_KEY", "change-this-in-production")

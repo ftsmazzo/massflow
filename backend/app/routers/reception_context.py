@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Annotated, Any
 from urllib.parse import parse_qs
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -14,9 +14,11 @@ from app.config import settings
 from app.database import get_db
 from app.models.campaign import Campaign
 from app.models.lead import Lead
+from app.models.campaign_qualification import CampaignQualificationConfig
 from app.models.reception_context import ReceptionContext
 from app.models.tenant import Tenant
 from app.schemas.reception_context import ReceptionContextCreate
+from app.services.reconciliation_trigger import attach_reconcile_jobs_after_context_consumed
 
 router = APIRouter(prefix="/reception-context", tags=["Reception context"])
 
@@ -232,6 +234,7 @@ async def create_reception_context(
 @router.get("/next-first-interaction")
 def consume_next_first_interaction_context(
     request: Request,
+    background_tasks: BackgroundTasks,
     db: Annotated[Session, Depends(get_db)],
     tenant_id: int,
     lead_phone: str,
@@ -260,11 +263,31 @@ def consume_next_first_interaction_context(
         return {"found": False, "instruction": None}
 
     instruction = _build_agent_first_instruction(row)
+    reconcile_meta: dict = {}
     if consume:
         row.consumed_at = datetime.utcnow()
         db.commit()
+        # Reconciliação SaaS → qualificação: dispara ao consumir contexto (agente acionado).
+        if row.campaign_id is not None:
+            cfg = (
+                db.query(CampaignQualificationConfig)
+                .filter(
+                    CampaignQualificationConfig.tenant_id == tenant_id,
+                    CampaignQualificationConfig.campaign_id == row.campaign_id,
+                )
+                .first()
+            )
+            if cfg and getattr(cfg, "reconcile_from_saas_chat", False):
+                reconcile_meta = attach_reconcile_jobs_after_context_consumed(
+                    background_tasks,
+                    tenant_id=tenant_id,
+                    campaign_id=row.campaign_id,
+                    lead_phone=phone,
+                    lead_id=row.lead_id,
+                    lead_name=row.lead_name,
+                )
 
-    return {
+    out = {
         "found": True,
         "reception_context_id": row.id,
         "instruction": instruction,
@@ -272,3 +295,5 @@ def consume_next_first_interaction_context(
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "consumed_at": row.consumed_at.isoformat() if row.consumed_at else None,
     }
+    out.update(reconcile_meta)
+    return out

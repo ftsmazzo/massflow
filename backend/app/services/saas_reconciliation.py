@@ -8,7 +8,11 @@ from typing import Any
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
-from app.models.campaign_qualification import CampaignQualificationAnswer, CampaignQualificationSession
+from app.models.campaign_qualification import (
+    CampaignQualificationAnswer,
+    CampaignQualificationConfig,
+    CampaignQualificationSession,
+)
 from app.models.evolution_instance import EvolutionInstance
 from app.models.lead import Lead
 from app.schemas.qualification import QualificationAnswerIn
@@ -27,6 +31,34 @@ def normalize_answer_step_e(raw: str) -> str:
     if any(x in t for x in ("nao", "não", "negativo", "agora nao")):
         return "não"
     return raw.strip()
+
+
+def slice_rows_for_latest_qualification_session(
+    rows: list[SaaSChatRow],
+    cfg: CampaignQualificationConfig,
+) -> list[SaaSChatRow]:
+    """
+    Se o histórico tiver várias conversas no mesmo telefone, usa o trecho que começa na
+    última ocorrência da primeira pergunta da campanha (texto em questions_json[0]).
+    """
+    if not rows:
+        return rows
+    q = cfg.questions_json if isinstance(cfg.questions_json, list) else []
+    hint = ""
+    if q and isinstance(q[0], dict):
+        hint = str(q[0].get("text") or "").strip().lower()
+    if not hint:
+        hint = "dívida"
+    # Última linha onde o assistente parece iniciar a triagem atual
+    start = 0
+    hint_short = hint[:24] if len(hint) > 24 else hint
+    for i, r in enumerate(rows):
+        c = (r.bot_content or "").lower()
+        if hint_short and hint_short in c:
+            start = i
+        elif "quais" in c and "dívida" in c:
+            start = i
+    return rows[start:]
 
 
 def extract_step_answers(rows: list[SaaSChatRow], steps: list[str]) -> dict[str, tuple[str, str]]:
@@ -99,9 +131,15 @@ def reconcile_lead_from_saas_chat(
     if not rows:
         raise ValueError("Nenhuma mensagem encontrada no histórico SaaS para este telefone.")
 
+    raw_rows = rows
+    rows = slice_rows_for_latest_qualification_session(rows, cfg)
     extracted = extract_step_answers(rows, steps)
     if not extracted:
-        raise ValueError("Não foi possível extrair respostas alinhadas às etapas (histórico curto ou formato inesperado).")
+        extracted = extract_step_answers(raw_rows, steps)
+    if not extracted:
+        raise ValueError(
+            "Não foi possível extrair respostas alinhadas às etapas (histórico curto ou formato inesperado)."
+        )
 
     existing_keys: set[str] = set()
     if session:
