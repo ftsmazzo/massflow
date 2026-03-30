@@ -83,6 +83,11 @@ def main() -> int:
         return 0
 
     print(json.dumps(data, ensure_ascii=False, indent=2))
+    diag = data.get("diagnostics")
+    if diag:
+        print("\n--- diagnostics (por que o banco mudou ou não) ---\n")
+        print(json.dumps(diag, ensure_ascii=False, indent=2))
+
     summary = data.get("classification_summary_text")
     if summary:
         print("\n--- classification_summary_text (resumo / msg classificatória) ---\n")

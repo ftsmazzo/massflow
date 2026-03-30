@@ -359,6 +359,21 @@ def reconcile_lead_from_saas_chat(
             notification_done = _try_reconcile_whatsapp_notify(
                 db, cfg, tenant_id, campaign_id, phone, lead_done, lead_name, last_done,
             )
+        ans_rows = (
+            db.query(CampaignQualificationAnswer)
+            .filter(CampaignQualificationAnswer.session_id == session.id)
+            .count()
+        )
+        diagnostics: dict[str, Any] = {
+            "path": "session_already_completed",
+            "why_no_db_writes": "Sessão já estava completed; MassFlow não insere respostas duplicadas.",
+            "normalized_phone": phone,
+            "session_id": session.id,
+            "session_status": session.status,
+            "answer_rows_in_db": ans_rows,
+            "reconcile_from_saas_chat": bool(getattr(cfg, "reconcile_from_saas_chat", False)),
+            "saas_tenant_id_filter": getattr(cfg, "saas_tenant_id", None),
+        }
         return {
             "ok": True,
             "skipped": True,
@@ -369,6 +384,7 @@ def reconcile_lead_from_saas_chat(
             "notification_sent": notification_done,
             "classification_summary_text": summary_text,
             "send_whatsapp": send_whatsapp,
+            "diagnostics": diagnostics,
         }
 
     saas_tid = getattr(cfg, "saas_tenant_id", None)
@@ -377,17 +393,23 @@ def reconcile_lead_from_saas_chat(
         raise ValueError("Nenhuma mensagem encontrada no histórico SaaS para este telefone.")
 
     raw_rows = rows
-    rows = slice_rows_for_latest_qualification_session(rows, cfg)
-    rows = drop_leading_permission_row(rows, steps, cfg)
+    saas_rows_fetched = len(raw_rows)
+    rows_after_slice = slice_rows_for_latest_qualification_session(raw_rows, cfg)
+    len_after_slice = len(rows_after_slice)
+    rows_before_perm = rows_after_slice
+    rows = drop_leading_permission_row(rows_after_slice, steps, cfg)
+    permission_first_row_dropped = len(rows_before_perm) > len(rows)
     extracted = extract_step_answers(rows, steps)
+    used_fallback_slice = False
     if not extracted:
         rows_fb = slice_rows_for_latest_qualification_session(raw_rows, cfg)
-        rows_fb = drop_leading_permission_row(rows_fb, steps, cfg)
-        extracted = extract_step_answers(rows_fb, steps)
+        rows_fb2 = drop_leading_permission_row(rows_fb, steps, cfg)
+        extracted = extract_step_answers(rows_fb2, steps)
+        used_fallback_slice = True
     logger.info(
         "reconcile: saas rows after_slice_drop=%s raw=%s steps_cfg=%s extracted=%s",
         len(rows),
-        len(raw_rows),
+        saas_rows_fetched,
         steps,
         list(extracted.keys()),
     )
@@ -413,6 +435,10 @@ def reconcile_lead_from_saas_chat(
 
     steps_applied: list[str] = []
     last_state = None
+    skipped_already_in_db: list[str] = [
+        sk for sk in steps if sk in extracted and sk in existing_keys
+    ]
+    missing_from_extraction: list[str] = [sk for sk in steps if sk not in extracted]
 
     for step_key in steps:
         if step_key not in extracted:
@@ -468,11 +494,48 @@ def reconcile_lead_from_saas_chat(
             db, cfg, tenant_id, campaign_id, phone, lead, lead_name, last_state,
         )
 
-    msg = (
-        f"Reconciliação aplicada: {', '.join(steps_applied)}."
-        if steps_applied
-        else "Nenhuma etapa nova aplicada (já gravadas ou dados insuficientes)."
-    )
+    extracted_key_set = set(extracted.keys())
+    if steps_applied:
+        msg = f"Reconciliação aplicada: {', '.join(steps_applied)}."
+        why_db = f"Gravadas {len(steps_applied)} etapa(s) em campaign_qualification_answers (sessão atualizada)."
+    elif extracted_key_set <= existing_keys:
+        msg = (
+            "Nenhuma etapa nova: tudo que veio do SaaS já estava gravado nesta sessão "
+            f"({', '.join(sorted(extracted_key_set))})."
+        )
+        why_db = (
+            "O banco MassFlow não muda porque não há etapas novas; "
+            "veja answer_step_keys_in_db_before vs extracted_step_keys."
+        )
+    elif missing_from_extraction:
+        msg = (
+            "Nenhuma etapa nova aplicada: faltam linhas/mensagens no SaaS para "
+            f"{', '.join(missing_from_extraction)}."
+        )
+        why_db = "Nada novo gravado até a extração cobrir todas as etapas (histórico curto ou formato)."
+    else:
+        msg = "Nenhuma etapa nova aplicada (ver diagnostics)."
+        why_db = "Ver why_db_changed_or_not e steps_applied."
+
+    diagnostics_full: dict[str, Any] = {
+        "path": "reconcile_full",
+        "normalized_phone": phone,
+        "reconcile_from_saas_chat": bool(getattr(cfg, "reconcile_from_saas_chat", False)),
+        "saas_tenant_id_filter": getattr(cfg, "saas_tenant_id", None),
+        "saas_rows_fetched": saas_rows_fetched,
+        "saas_rows_after_slice": len_after_slice,
+        "saas_rows_after_permission_drop": len(rows),
+        "permission_first_row_dropped": permission_first_row_dropped,
+        "used_fallback_extract_path": used_fallback_slice,
+        "steps_configured": steps,
+        "extracted_step_keys": list(extracted.keys()),
+        "answer_step_keys_in_db_before": sorted(existing_keys),
+        "steps_skipped_already_in_db": skipped_already_in_db,
+        "steps_missing_from_saas_extraction": missing_from_extraction,
+        "steps_applied": steps_applied,
+        "why_db_changed_or_not": why_db,
+    }
+
     return {
         "ok": True,
         "skipped": False,
@@ -483,6 +546,7 @@ def reconcile_lead_from_saas_chat(
         "notification_sent": notification_sent,
         "classification_summary_text": summary_text,
         "send_whatsapp": send_whatsapp,
+        "diagnostics": diagnostics_full,
     }
 
 
