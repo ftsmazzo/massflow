@@ -62,7 +62,7 @@ def run_reconcile_safe(
 
 
 def _parse_retry_delays() -> list[int]:
-    raw = (getattr(settings, "RECONCILE_SAAS_RETRY_DELAYS_SECONDS", None) or "30,60,120") or ""
+    raw = (getattr(settings, "RECONCILE_SAAS_RETRY_DELAYS_SECONDS", None) or "30,60,120,180,300") or ""
     out: list[int] = []
     for part in str(raw).split(","):
         part = part.strip()

@@ -11,6 +11,7 @@ from typing import Any
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.engine.url import make_url
 from urllib.parse import quote_plus
 
@@ -135,9 +136,28 @@ def fetch_chat_messages_for_phone(
         tenant_filter = ' AND "tenantId" = :tid'
         params["tid"] = int(saas_tenant_id)
 
-    sql = text(
+    # Texto do assistente: no SaaS costuma estar em "botMessage"; "content" pode estar vazio ou duplicado.
+    # A reconciliação pareia pergunta em rows[i] com resposta em rows[i+1].userMessage (próxima linha).
+    sql_with_bot = text(
         f"""
-        SELECT id, "tenantId", "userMessage", content, "createdAt", phone
+        SELECT id, "tenantId", "userMessage",
+            COALESCE(
+                NULLIF(TRIM("botMessage"), ''),
+                NULLIF(TRIM(content), '')
+            ) AS assistant_text,
+            "createdAt", phone
+        FROM {table_sql}
+        WHERE (phone LIKE :like OR phone LIKE :like2)
+        {tenant_filter}
+        ORDER BY "createdAt" ASC NULLS LAST, id ASC
+        LIMIT :lim
+        """
+    )
+    sql_content_only = text(
+        f"""
+        SELECT id, "tenantId", "userMessage",
+            NULLIF(TRIM(content), '') AS assistant_text,
+            "createdAt", phone
         FROM {table_sql}
         WHERE (phone LIKE :like OR phone LIKE :like2)
         {tenant_filter}
@@ -149,14 +169,24 @@ def fetch_chat_messages_for_phone(
 
     out: list[SaaSChatRow] = []
     with eng.connect() as conn:
-        result = conn.execute(sql, params)
+        try:
+            result = conn.execute(sql_with_bot, params)
+        except ProgrammingError as exc:
+            err = str(exc).lower()
+            if "botmessage" not in err:
+                raise
+            logger.warning(
+                "SaaS chatMessages: usando apenas coluna content (coluna botMessage indisponível): %s",
+                exc,
+            )
+            result = conn.execute(sql_content_only, params)
         for row in result.mappings():
             out.append(
                 SaaSChatRow(
                     id=int(row["id"]),
                     tenant_id=int(row["tenantId"]) if row.get("tenantId") is not None else None,
                     user_message=row.get("userMessage"),
-                    bot_content=row.get("content"),
+                    bot_content=row.get("assistant_text"),
                     created_at=row.get("createdAt"),
                     phone_raw=row.get("phone"),
                 )

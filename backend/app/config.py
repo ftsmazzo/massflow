@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     # Lista separada por vírgula: ex. 30,60,120 = mais 3 passagens nesses intervalos (além da imediata).
     RECONCILE_SAAS_RETRY_DELAYS_SECONDS: str = os.getenv(
         "RECONCILE_SAAS_RETRY_DELAYS_SECONDS",
-        "30,60,120",
+        "30,60,120,180,300",
     )
 
     # JWT

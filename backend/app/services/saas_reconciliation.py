@@ -4,6 +4,7 @@ Reconcilia respostas da pré-triagem a partir do histórico SaaS (chatMessages) 
 from __future__ import annotations
 
 import logging
+import unicodedata
 from typing import Any
 
 from sqlalchemy import desc
@@ -22,6 +23,11 @@ from app.services.evolution import send_text_sync
 from app.services.saas_chat_messages import SaaSChatRow, fetch_chat_messages_for_phone
 
 logger = logging.getLogger("massflow.reconcile")
+
+
+def _fold_accents(s: str) -> str:
+    nfd = unicodedata.normalize("NFD", s)
+    return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
 
 
 def _try_reconcile_whatsapp_notify(
@@ -117,6 +123,7 @@ def slice_rows_for_latest_qualification_session(
     """
     Se o histórico tiver várias conversas no mesmo telefone, usa o trecho que começa na
     última ocorrência da primeira pergunta da campanha (texto em questions_json[0]).
+    Comparação sem acentos para bater com variações no SaaS.
     """
     if not rows:
         return rows
@@ -128,20 +135,27 @@ def slice_rows_for_latest_qualification_session(
         hint = "dívida"
     # Última linha onde o assistente parece iniciar a triagem atual
     start = 0
-    hint_short = hint[:24] if len(hint) > 24 else hint
+    hint_key = _fold_accents(hint[:48] if len(hint) > 48 else hint)
     for i, r in enumerate(rows):
-        c = (r.bot_content or "").lower()
-        if hint_short and hint_short in c:
+        c = _fold_accents((r.bot_content or "").lower())
+        if hint_key and hint_key in c:
             start = i
-        elif "quais" in c and "dívida" in c:
+        elif "quais" in c and "divida" in c:
             start = i
     return rows[start:]
 
 
 def extract_step_answers(rows: list[SaaSChatRow], steps: list[str]) -> dict[str, tuple[str, str]]:
     """
-    Para cada step_key na ordem, obtém (question_text, answer) a partir do padrão chatMessages:
-    resposta do passo i está em rows[i+1].userMessage; pergunta em rows[i].bot_content.
+    Para cada step_key na ordem, obtém (question_text, answer).
+
+    Padrão típico do SaaS (uma linha por turno do assistente):
+    - `bot_content` da linha i = pergunta do passo i (vem de botMessage ou content no DB).
+    - A resposta do lead ao passo i está em **userMessage da linha i+1**, não na mesma linha.
+      Na mesma linha, `userMessage` costuma ser a resposta à pergunta **anterior** (efeito visual
+      confuso no JSON exportado, mas o par (linha i, linha i+1) está correto).
+
+    Para N etapas são necessárias N+1 linhas alinhadas após o slice.
     """
     out: dict[str, tuple[str, str]] = {}
     n = len(steps)
@@ -154,10 +168,22 @@ def extract_step_answers(rows: list[SaaSChatRow], steps: list[str]) -> dict[str,
         qtext = (qrow.bot_content or "").strip() or None
         ans = (arow.user_message or "").strip()
         if not ans:
+            logger.warning(
+                "reconcile: userMessage vazio na linha id=%s (etapa %s); histórico incompleto ou formato divergente",
+                getattr(arow, "id", None),
+                step_key,
+            )
             continue
         if step_key == "E":
             ans = normalize_answer_step_e(ans)
         out[step_key] = (qtext or f"Etapa {step_key}", ans)
+        logger.debug(
+            "reconcile extract step=%s q_row_id=%s a_row_id=%s preview=%s",
+            step_key,
+            qrow.id,
+            arow.id,
+            (ans[:80] + "…") if len(ans) > 80 else ans,
+        )
     return out
 
 
@@ -222,6 +248,13 @@ def reconcile_lead_from_saas_chat(
     extracted = extract_step_answers(rows, steps)
     if not extracted:
         extracted = extract_step_answers(raw_rows, steps)
+    logger.info(
+        "reconcile: saas rows slice=%s raw=%s steps_cfg=%s extracted=%s",
+        len(rows),
+        len(raw_rows),
+        steps,
+        list(extracted.keys()),
+    )
     if not extracted:
         raise ValueError(
             "Não foi possível extrair respostas alinhadas às etapas (histórico curto ou formato inesperado)."
