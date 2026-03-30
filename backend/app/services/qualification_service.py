@@ -4,6 +4,7 @@ Usado pelo router HTTP e pela reconciliação SaaS.
 """
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 import unicodedata
 from typing import Any
@@ -25,6 +26,8 @@ from app.schemas.qualification import (
     QualificationAnswerItem,
     QualificationSessionState,
 )
+
+logger = logging.getLogger("massflow.qualification")
 
 
 def normalize_phone(v: str) -> str:
@@ -268,6 +271,151 @@ def _send_webhook_sync(webhook_url: str, payload: dict[str, Any]) -> bool:
         return False
 
 
+def _notify_qualification_whatsapp_completed(
+    db: Session,
+    cfg: CampaignQualificationConfig,
+    tenant_id: int,
+    campaign_id: int,
+    lead_phone: str,
+    session: CampaignQualificationSession,
+    lead: Lead | None,
+) -> None:
+    """Resumo WhatsApp (reconcile_notify_* na config) quando a qualificação conclui pelo /answer."""
+    try:
+        from app.services.saas_reconciliation import _try_reconcile_whatsapp_notify
+
+        last_state = build_session_state_for_session(db, tenant_id, campaign_id, session)
+        _try_reconcile_whatsapp_notify(
+            db,
+            cfg,
+            tenant_id,
+            campaign_id,
+            lead_phone,
+            lead,
+            session.lead_name,
+            last_state,
+        )
+    except Exception:
+        logger.exception("Falha ao enviar WhatsApp de qualificação concluída")
+
+
+def repair_stale_qualification_session(
+    db: Session,
+    tenant_id: int,
+    campaign_id: int,
+    lead_phone: str,
+    send_final_webhook: bool = True,
+) -> QualificationSessionState:
+    """
+    Se a sessão ficou presa em in_progress mas já existem respostas para TODAS as etapas
+    configuradas (ex.: falha após gravar a última linha), completa classificação, webhook e WhatsApp.
+    Se faltar etapa, levanta ValueError listando o que falta (em geral a etapa E).
+    """
+    phone = normalize_phone(lead_phone)
+    if not phone:
+        raise ValueError("lead_phone inválido.")
+
+    campaign = (
+        db.query(Campaign)
+        .filter(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id)
+        .first()
+    )
+    if not campaign:
+        raise ValueError("Campanha não encontrada para tenant informado.")
+
+    session = (
+        db.query(CampaignQualificationSession)
+        .filter(
+            CampaignQualificationSession.tenant_id == tenant_id,
+            CampaignQualificationSession.campaign_id == campaign_id,
+            CampaignQualificationSession.lead_phone == phone,
+            CampaignQualificationSession.status == "in_progress",
+        )
+        .order_by(desc(CampaignQualificationSession.id))
+        .first()
+    )
+    if not session:
+        raise ValueError("Nenhuma sessão em andamento encontrada para este telefone/campanha.")
+
+    cfg = ensure_config(db, tenant_id, campaign_id)
+    steps = ordered_steps(cfg)
+    if not steps:
+        raise ValueError("Campanha sem etapas configuradas.")
+
+    ans_rows = (
+        db.query(CampaignQualificationAnswer)
+        .filter(CampaignQualificationAnswer.session_id == session.id)
+        .all()
+    )
+    answered = {a.step_key for a in ans_rows}
+    missing = [s for s in steps if s not in answered]
+    if missing:
+        raise ValueError(
+            "Sessão não pode ser fechada: faltam respostas registradas no MassFlow para: "
+            + ", ".join(missing)
+            + ". Envie POST /qualification/answer com esses step_key."
+        )
+
+    total = sum(int(a.score_delta or 0) for a in ans_rows)
+    session.score_total = total
+    session.answers_count = len(answered)
+    session.status = "completed"
+    session.completed_at = datetime.utcnow()
+    session.current_step = None
+    session.classification = classify_score(int(session.score_total or 0), cfg.classification_rules_json or {})
+
+    webhook_url = cfg.final_webhook_url or str((campaign.content or {}).get("campaign_webhook_url") or "").strip() or None
+
+    answers_data = sorted(ans_rows, key=lambda a: a.id)
+    payload = {
+        "event": "campaign_qualification_completed",
+        "tenant_id": session.tenant_id,
+        "campaign_id": session.campaign_id,
+        "campaign_name": campaign.name,
+        "lead_id": session.lead_id,
+        "lead_phone": session.lead_phone,
+        "lead_name": session.lead_name,
+        "session_id": session.id,
+        "score_total": session.score_total,
+        "classification": session.classification,
+        "notify_lawyer": bool(cfg.notify_lawyer),
+        "answers": [
+            {
+                "step_key": a.step_key,
+                "question_text": a.question_text,
+                "answer_raw": a.answer_raw,
+                "normalized_answer": a.normalized_answer,
+                "score_delta": a.score_delta,
+            }
+            for a in answers_data
+        ],
+        "completed_at": session.completed_at.isoformat() if session.completed_at else None,
+        "source": "massflow",
+        "repaired": True,
+    }
+    session.final_payload = payload
+    db.commit()
+    db.refresh(session)
+
+    if send_final_webhook and webhook_url and session.notified_at is None:
+        try:
+            if _send_webhook_sync(webhook_url, payload):
+                session.notified_at = datetime.utcnow()
+                db.commit()
+        except Exception:
+            logger.exception("Webhook ao reparar sessão de qualificação")
+
+    db.refresh(session)
+    lead = None
+    if session.lead_id is not None:
+        lead = db.query(Lead).filter(Lead.id == session.lead_id, Lead.tenant_id == tenant_id).first()
+    if not lead:
+        lead = db.query(Lead).filter(Lead.tenant_id == tenant_id, Lead.phone == phone).first()
+    _notify_qualification_whatsapp_completed(db, cfg, tenant_id, campaign_id, phone, session, lead)
+
+    return build_session_state_for_session(db, tenant_id, campaign_id, session)
+
+
 def apply_qualification_answer(db: Session, body: QualificationAnswerIn) -> QualificationSessionState:
     """
     Grava uma etapa da qualificação (mesma regra do POST /api/qualification/answer).
@@ -417,6 +565,8 @@ def apply_qualification_answer(db: Session, body: QualificationAnswerIn) -> Qual
             except Exception:
                 pass
         db.commit()
+        db.refresh(session)
+        _notify_qualification_whatsapp_completed(db, cfg, body.tenant_id, body.campaign_id, phone, session, lead)
 
     db.refresh(session)
     final_result = (

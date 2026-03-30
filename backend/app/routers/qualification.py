@@ -257,6 +257,33 @@ def post_qualification_answer(
     return state
 
 
+@router.post("/repair-session", response_model=QualificationSessionState)
+def post_repair_qualification_session(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    tenant_id: int = Query(...),
+    campaign_id: int = Query(...),
+    lead_phone: str = Query(...),
+    send_final_webhook: bool = Query(True),
+):
+    """
+    Fecha sessão em `in_progress` quando já existem respostas para todas as etapas (A–E),
+    mas classificação/webhook não rodaram (ex.: erro após o último POST /answer).
+    Se faltar etapa no banco, retorna 422 com a lista (em geral falta `step_key` E).
+    """
+    _require_qualification_secret(request)
+    try:
+        return qs.repair_stale_qualification_session(
+            db,
+            tenant_id=tenant_id,
+            campaign_id=campaign_id,
+            lead_phone=lead_phone,
+            send_final_webhook=send_final_webhook,
+        )
+    except ValueError as e:
+        raise _map_qualification_value_error(e) from e
+
+
 @router.post("/reconcile-from-saas")
 def post_reconcile_from_saas(
     request: Request,
