@@ -24,6 +24,14 @@ class CampaignQualificationConfig(Base):
     notify_lawyer = Column(Boolean, default=True, nullable=False)
     version = Column(Integer, default=1, nullable=False)
 
+    # Reconciliação a partir do Postgres SaaS (ex.: tabela chatMessages)
+    reconcile_from_saas_chat = Column(Boolean, default=False, nullable=False)
+    saas_tenant_id = Column(Integer, nullable=True)
+    reconcile_notify_phone = Column(String(30), nullable=True)
+    reconcile_notify_instance_id = Column(
+        Integer, ForeignKey("evolution_instances.id", ondelete="SET NULL"), nullable=True
+    )
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 

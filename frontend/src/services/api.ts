@@ -374,6 +374,10 @@ export type QualificationConfig = {
   notify_lawyer: boolean
   version: number
   updated_at: string | null
+  reconcile_from_saas_chat?: boolean
+  saas_tenant_id?: number | null
+  reconcile_notify_phone?: string | null
+  reconcile_notify_instance_id?: number | null
 }
 
 export type QualificationSessionListItem = {

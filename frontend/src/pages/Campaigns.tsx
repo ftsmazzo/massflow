@@ -613,6 +613,10 @@ function CampaignQualificationModal({
         questions_json: questions,
         scoring_rules_json: scoring,
         classification_rules_json: classify,
+        reconcile_from_saas_chat: cfg.reconcile_from_saas_chat ?? false,
+        saas_tenant_id: cfg.saas_tenant_id ?? null,
+        reconcile_notify_phone: cfg.reconcile_notify_phone ?? null,
+        reconcile_notify_instance_id: cfg.reconcile_notify_instance_id ?? null,
       })
         .then((r) => {
           setCfg(r.data)
@@ -662,6 +666,58 @@ function CampaignQualificationModal({
                 placeholder="https://.../webhook/final-qualificacao"
               />
             </label>
+            <fieldset className="campaigns-fieldset">
+              <legend>Reconciliação SaaS (histórico chatMessages)</legend>
+              <p className="campaigns-form-hint">
+                Com <code>SAAS_CHAT_HISTORY_DATABASE_URL</code> no backend, é possível gravar respostas a partir do
+                Postgres do agente. Endpoint (segredo):{' '}
+                <code>POST /api/qualification/reconcile-from-saas</code>.
+              </p>
+              <label className="campaigns-check">
+                <input
+                  type="checkbox"
+                  checked={cfg.reconcile_from_saas_chat ?? false}
+                  onChange={(e) => setCfg({ ...cfg, reconcile_from_saas_chat: e.target.checked })}
+                />
+                Habilitar reconciliação a partir do SaaS
+              </label>
+              <label>
+                tenantId no SaaS (filtro opcional)
+                <input
+                  type="number"
+                  value={cfg.saas_tenant_id ?? ''}
+                  onChange={(e) =>
+                    setCfg({
+                      ...cfg,
+                      saas_tenant_id: e.target.value === '' ? null : Number(e.target.value),
+                    })
+                  }
+                  placeholder="ex.: 68"
+                />
+              </label>
+              <label>
+                WhatsApp destino (resumo, só dígitos)
+                <input
+                  value={cfg.reconcile_notify_phone ?? ''}
+                  onChange={(e) => setCfg({ ...cfg, reconcile_notify_phone: e.target.value || null })}
+                  placeholder="5511999999999"
+                />
+              </label>
+              <label>
+                ID da instância Evolution (envio do resumo)
+                <input
+                  type="number"
+                  value={cfg.reconcile_notify_instance_id ?? ''}
+                  onChange={(e) =>
+                    setCfg({
+                      ...cfg,
+                      reconcile_notify_instance_id: e.target.value === '' ? null : Number(e.target.value),
+                    })
+                  }
+                  placeholder="ID em Instâncias"
+                />
+              </label>
+            </fieldset>
             <label>
               Perguntas (JSON)
               <textarea rows={6} value={questionsText} onChange={(e) => setQuestionsText(e.target.value)} />

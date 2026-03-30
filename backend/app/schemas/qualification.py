@@ -15,6 +15,11 @@ class QualificationConfigBody(BaseModel):
     final_webhook_url: str | None = None
     notify_lawyer: bool = True
     version: int = 1
+    # Reconciliação a partir do histórico SaaS (Postgres chatMessages)
+    reconcile_from_saas_chat: bool = False
+    saas_tenant_id: int | None = None
+    reconcile_notify_phone: str | None = None
+    reconcile_notify_instance_id: int | None = None
 
 
 class QualificationConfigResponse(QualificationConfigBody):
