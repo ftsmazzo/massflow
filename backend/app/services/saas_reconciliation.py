@@ -149,28 +149,22 @@ def extract_step_answers(rows: list[SaaSChatRow], steps: list[str]) -> dict[str,
     """
     Para cada step_key na ordem, obtém (question_text, answer).
 
-    Padrão típico do SaaS (uma linha por turno do assistente):
-    - `bot_content` da linha i = pergunta do passo i (vem de botMessage ou content no DB).
-    - A resposta do lead ao passo i está em **userMessage da linha i+1**, não na mesma linha.
-      Na mesma linha, `userMessage` costuma ser a resposta à pergunta **anterior** (efeito visual
-      confuso no JSON exportado, mas o par (linha i, linha i+1) está correto).
-
-    Para N etapas são necessárias N+1 linhas alinhadas após o slice.
+    No SaaS, **na mesma linha**: `botMessage` = pergunta do assistente, `userMessage` = resposta do lead.
+    `bot_content` aqui vem da query (COALESCE(botMessage, content)).
+    Após o slice, `rows[0]` = etapa steps[0], `rows[1]` = steps[1], etc. Para N etapas são necessárias
+    N linhas (linhas extras no fim, ex. mensagem de encerramento, são ignoradas).
     """
     out: dict[str, tuple[str, str]] = {}
-    n = len(steps)
-    for i in range(n):
-        if i + 1 >= len(rows):
+    for i, step_key in enumerate(steps):
+        if i >= len(rows):
             break
-        qrow = rows[i]
-        arow = rows[i + 1]
-        step_key = steps[i]
-        qtext = (qrow.bot_content or "").strip() or None
-        ans = (arow.user_message or "").strip()
+        row = rows[i]
+        qtext = (row.bot_content or "").strip() or None
+        ans = (row.user_message or "").strip()
         if not ans:
             logger.warning(
                 "reconcile: userMessage vazio na linha id=%s (etapa %s); histórico incompleto ou formato divergente",
-                getattr(arow, "id", None),
+                row.id,
                 step_key,
             )
             continue
@@ -178,10 +172,9 @@ def extract_step_answers(rows: list[SaaSChatRow], steps: list[str]) -> dict[str,
             ans = normalize_answer_step_e(ans)
         out[step_key] = (qtext or f"Etapa {step_key}", ans)
         logger.debug(
-            "reconcile extract step=%s q_row_id=%s a_row_id=%s preview=%s",
+            "reconcile extract step=%s row_id=%s preview=%s",
             step_key,
-            qrow.id,
-            arow.id,
+            row.id,
             (ans[:80] + "…") if len(ans) > 80 else ans,
         )
     return out

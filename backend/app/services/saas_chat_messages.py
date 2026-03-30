@@ -136,8 +136,8 @@ def fetch_chat_messages_for_phone(
         tenant_filter = ' AND "tenantId" = :tid'
         params["tid"] = int(saas_tenant_id)
 
-    # Texto do assistente: no SaaS costuma estar em "botMessage"; "content" pode estar vazio ou duplicado.
-    # A reconciliação pareia pergunta em rows[i] com resposta em rows[i+1].userMessage (próxima linha).
+    # No SaaS (chatMessages): na mesma linha, "botMessage" (ou content) = pergunta do assistente;
+    # "userMessage" = resposta do lead a essa pergunta.
     sql_with_bot = text(
         f"""
         SELECT id, "tenantId", "userMessage",
