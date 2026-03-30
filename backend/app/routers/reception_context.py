@@ -22,6 +22,7 @@ from app.services.campaign_resolution import (
     mark_latest_inbound_agent_context_consumed,
     resolve_campaign_id_for_qualification,
 )
+from app.services.inbound_evolution import normalize_phone_digits, phones_match_for_lead
 from app.services.reconciliation_trigger import attach_reconcile_jobs_after_context_consumed
 
 router = APIRouter(prefix="/reception-context", tags=["Reception context"])
@@ -249,20 +250,22 @@ def consume_next_first_interaction_context(
     Se `consume=true`, marca consumed_at=now() ao devolver.
     """
     _require_reception_secret(request)
-    phone = "".join(c for c in str(lead_phone or "") if c.isdigit())
+    phone = normalize_phone_digits(str(lead_phone or ""))
     if not phone:
         raise HTTPException(status_code=422, detail="lead_phone inválido.")
 
-    row = (
+    # Mesma tolerância do inbound (55 vs DDD, sufixos): evita found=false por formato diferente.
+    candidates = (
         db.query(ReceptionContext)
         .filter(
             ReceptionContext.tenant_id == tenant_id,
-            ReceptionContext.lead_phone == phone,
             ReceptionContext.consumed_at.is_(None),
         )
         .order_by(ReceptionContext.created_at.desc(), ReceptionContext.id.desc())
-        .first()
+        .limit(80)
+        .all()
     )
+    row = next((r for r in candidates if phones_match_for_lead(phone, r.lead_phone)), None)
     if not row:
         return {"found": False, "instruction": None}
 
