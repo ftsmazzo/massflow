@@ -30,6 +30,126 @@ def _fold_accents(s: str) -> str:
     return "".join(c for c in nfd if unicodedata.category(c) != "Mn")
 
 
+def _user_looks_like_permission_ack(text: str) -> bool:
+    """
+    Respostas típicas à primeira mensagem do agente (pedido de permissão para perguntar),
+    não à pergunta A em si (pode, continue, siga, etc.).
+    """
+    raw = (text or "").strip()
+    if not raw or len(raw) > 72:
+        return False
+    t = _fold_accents(raw.lower()).rstrip("!?.")
+    one_shot = frozenset(
+        {
+            "pode",
+            "sim",
+            "ok",
+            "siga",
+            "continue",
+            "claro",
+            "vamos",
+            "isso",
+            "aham",
+            "beleza",
+            "blz",
+            "manda",
+            "vai",
+            "segue",
+            "por favor",
+            "pode sim",
+            "pode ser",
+            "ok pode",
+            "sim pode",
+            "pode continuar",
+            "pode seguir",
+            "continue sim",
+            "bora",
+            "seguimos",
+            "manda ver",
+            "pode ir",
+            "pode falar",
+            "fala",
+            "manda bala",
+            "combinado",
+            "certo",
+        }
+    )
+    if t in one_shot:
+        return True
+    words = t.split()
+    if len(words) <= 5 and len(t) <= 48:
+        perm = frozenset(
+            {
+                "pode",
+                "sim",
+                "ok",
+                "siga",
+                "continue",
+                "claro",
+                "vamos",
+                "segue",
+                "seguir",
+                "bora",
+                "manda",
+                "vai",
+                "fala",
+                "isso",
+                "aham",
+                "beleza",
+                "blz",
+                "certo",
+                "combinado",
+            }
+        )
+        if words and all(w in perm for w in words):
+            return True
+    return False
+
+
+def drop_leading_permission_row(
+    rows: list[SaaSChatRow],
+    steps: list[str],
+    cfg: CampaignQualificationConfig,
+) -> list[SaaSChatRow]:
+    """
+    Remove a primeira linha quando for só o “portão” de permissão (agente pede para perguntar,
+    lead responde pode/continue/siga). A etapa A passa a ser mapeada a partir da segunda linha.
+
+    Se o `botMessage` da primeira linha **já contiver** o texto da pergunta 1 da campanha (ou o gancho
+    “quais … dívidas”), não removemos: é intro+Q1 na mesma bolha — a resposta “pode” não é a etapa A,
+    mas dropar a linha apagaria o texto da Q1; nesse caso o mapeamento same-line para A fica limitado
+    (recomenda-se separar permissão e Q1 em linhas distintas no agente).
+    """
+    if not rows or not steps:
+        return rows
+    n = len(steps)
+    if len(rows) < n + 1:
+        return rows
+    u = (rows[0].user_message or "").strip()
+    if not _user_looks_like_permission_ack(u):
+        return rows
+
+    bot = (rows[0].bot_content or "")
+    bot_f = _fold_accents(bot.lower())
+    q = cfg.questions_json if isinstance(cfg.questions_json, list) else []
+    hint = ""
+    if q and isinstance(q[0], dict):
+        hint = str(q[0].get("text") or "").strip()
+    if hint:
+        hk = _fold_accents(hint[:56].lower()) if len(hint) > 56 else _fold_accents(hint.lower())
+        if hk and hk in bot_f:
+            return rows
+    if "quais" in bot_f and "divida" in bot_f:
+        return rows
+
+    logger.info(
+        "reconcile: ignorando primeira linha (id=%s) — resposta de permissão: %r",
+        rows[0].id,
+        u[:80],
+    )
+    return rows[1:]
+
+
 def _try_reconcile_whatsapp_notify(
     db: Session,
     cfg: CampaignQualificationConfig,
@@ -151,8 +271,9 @@ def extract_step_answers(rows: list[SaaSChatRow], steps: list[str]) -> dict[str,
 
     No SaaS, **na mesma linha**: `botMessage` = pergunta do assistente, `userMessage` = resposta do lead.
     `bot_content` aqui vem da query (COALESCE(botMessage, content)).
-    Após o slice, `rows[0]` = etapa steps[0], `rows[1]` = steps[1], etc. Para N etapas são necessárias
-    N linhas (linhas extras no fim, ex. mensagem de encerramento, são ignoradas).
+    Antes desta função, `drop_leading_permission_row` pode remover a primeira troca (pedido de permissão
+    para perguntar + “pode”/“continue”/“siga”), para que `rows[0]` seja a etapa A de verdade.
+    Para N etapas são necessárias N linhas após o slice e o drop (sobras no fim são ignoradas).
     """
     out: dict[str, tuple[str, str]] = {}
     for i, step_key in enumerate(steps):
@@ -238,11 +359,14 @@ def reconcile_lead_from_saas_chat(
 
     raw_rows = rows
     rows = slice_rows_for_latest_qualification_session(rows, cfg)
+    rows = drop_leading_permission_row(rows, steps, cfg)
     extracted = extract_step_answers(rows, steps)
     if not extracted:
-        extracted = extract_step_answers(raw_rows, steps)
+        rows_fb = slice_rows_for_latest_qualification_session(raw_rows, cfg)
+        rows_fb = drop_leading_permission_row(rows_fb, steps, cfg)
+        extracted = extract_step_answers(rows_fb, steps)
     logger.info(
-        "reconcile: saas rows slice=%s raw=%s steps_cfg=%s extracted=%s",
+        "reconcile: saas rows after_slice_drop=%s raw=%s steps_cfg=%s extracted=%s",
         len(rows),
         len(raw_rows),
         steps,
