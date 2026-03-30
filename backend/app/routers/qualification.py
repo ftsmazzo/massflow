@@ -3,7 +3,6 @@ Qualificação estruturada por campanha (A-E) com pontuação e webhook final.
 """
 from __future__ import annotations
 
-import logging
 from typing import Annotated, Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -35,7 +34,6 @@ from app.services.saas_chat_messages import saas_database_configured
 from app.services.saas_reconciliation import reconcile_lead_from_saas_chat
 
 router = APIRouter(prefix="/qualification", tags=["Qualification"])
-logger = logging.getLogger("massflow.qualification")
 
 
 def _require_qualification_secret(request: Request) -> None:
@@ -174,15 +172,7 @@ def get_session_state(
             CampaignQualificationAnswer.session_id == session.id
         ).all()
     }
-    # Respostas já existem no DB mas sessão ficou in_progress (reconciliação/interrupção): fecha agora.
-    if session.status == "in_progress" and steps and all(s in ans_steps for s in steps):
-        try:
-            fixed = qs.repair_stale_qualification_session(
-                db, tenant_id, cid, phone, send_final_webhook=True
-            )
-            return QualificationSessionQueryOut(found=True, state=fixed, campaign_id=cid)
-        except ValueError as e:
-            logger.warning("session-state auto-repair ignorado: %s", e)
+    # GET é só leitura: não chama repair aqui (use POST /repair-session quando precisar fechar sessão).
 
     next_step = next((s for s in steps if s not in ans_steps), None)
     webhook_url = qs.effective_webhook_url_for_campaign(db, tenant_id, cid, cfg)
