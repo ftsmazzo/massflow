@@ -135,13 +135,18 @@ def effective_webhook_url_for_campaign(
     return cfg.final_webhook_url or str(content.get("campaign_webhook_url") or "").strip() or None
 
 
+def normalize_step_key(k: str | None) -> str:
+    """Única forma de comparar etapas (reconciliação/API podem divergir em espaços/caso)."""
+    return str(k or "").strip().upper()
+
+
 def ordered_steps(cfg: CampaignQualificationConfig) -> list[str]:
     q = cfg.questions_json if isinstance(cfg.questions_json, list) else []
     steps: list[str] = []
     for item in q:
         if not isinstance(item, dict):
             continue
-        key = str(item.get("key") or "").strip().upper()
+        key = normalize_step_key(str(item.get("key") or ""))
         if key and key not in steps:
             steps.append(key)
     return steps or ["A", "B", "C", "D", "E"]
@@ -238,7 +243,7 @@ def build_session_state_for_session(
         .filter(CampaignQualificationAnswer.session_id == session.id)
         .all()
     )
-    answered_steps = {k for (k,) in ans_rows}
+    answered_steps = {normalize_step_key(k) for (k,) in ans_rows}
     next_step = next((s for s in steps if s not in answered_steps), None)
     webhook_url = (
         cfg.final_webhook_url
@@ -347,7 +352,7 @@ def repair_stale_qualification_session(
         .filter(CampaignQualificationAnswer.session_id == session.id)
         .all()
     )
-    answered = {a.step_key for a in ans_rows}
+    answered = {normalize_step_key(a.step_key) for a in ans_rows}
     missing = [s for s in steps if s not in answered]
     if missing:
         raise ValueError(
@@ -512,7 +517,7 @@ def apply_qualification_answer(db: Session, body: QualificationAnswerIn) -> Qual
         .filter(CampaignQualificationAnswer.session_id == session.id)
         .all()
     )
-    answered_steps = {k for (k,) in ans_rows}
+    answered_steps = {normalize_step_key(k) for (k,) in ans_rows}
     next_step = next((s for s in steps if s not in answered_steps), None)
     session.current_step = next_step
 

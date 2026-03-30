@@ -230,7 +230,7 @@ def reconcile_lead_from_saas_chat(
     existing_keys: set[str] = set()
     if session:
         existing_keys = {
-            r[0]
+            qs.normalize_step_key(r[0])
             for r in db.query(CampaignQualificationAnswer.step_key)
             .filter(CampaignQualificationAnswer.session_id == session.id)
             .all()
