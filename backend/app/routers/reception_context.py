@@ -18,6 +18,10 @@ from app.models.campaign_qualification import CampaignQualificationConfig
 from app.models.reception_context import ReceptionContext
 from app.models.tenant import Tenant
 from app.schemas.reception_context import ReceptionContextCreate
+from app.services.campaign_resolution import (
+    mark_latest_inbound_agent_context_consumed,
+    resolve_campaign_id_for_qualification,
+)
 from app.services.reconciliation_trigger import attach_reconcile_jobs_after_context_consumed
 
 router = APIRouter(prefix="/reception-context", tags=["Reception context"])
@@ -264,16 +268,33 @@ def consume_next_first_interaction_context(
 
     instruction = _build_agent_first_instruction(row)
     reconcile_meta: dict = {}
+    campaign_resolved = resolve_campaign_id_for_qualification(
+        db,
+        tenant_id=tenant_id,
+        lead_phone=phone,
+        lead_id=row.lead_id,
+        reception_campaign_id=row.campaign_id,
+    )
+    inbound_marked = False
     if consume:
         row.consumed_at = datetime.utcnow()
         db.commit()
-        # Reconciliação SaaS → qualificação: dispara ao consumir contexto (agente acionado).
-        if row.campaign_id is not None:
+        # Sinal em campaign_inbound_replies: agente consumiu o contexto da 1ª interação.
+        if campaign_resolved is not None:
+            inbound_marked = mark_latest_inbound_agent_context_consumed(
+                db,
+                tenant_id=tenant_id,
+                campaign_id=campaign_resolved,
+                lead_phone=phone,
+                lead_id=row.lead_id,
+            )
+        # Reconciliação SaaS → qualificação: campanha vem do contexto OU do último inbound (disparo atual).
+        if campaign_resolved is not None:
             cfg = (
                 db.query(CampaignQualificationConfig)
                 .filter(
                     CampaignQualificationConfig.tenant_id == tenant_id,
-                    CampaignQualificationConfig.campaign_id == row.campaign_id,
+                    CampaignQualificationConfig.campaign_id == campaign_resolved,
                 )
                 .first()
             )
@@ -281,7 +302,7 @@ def consume_next_first_interaction_context(
                 reconcile_meta = attach_reconcile_jobs_after_context_consumed(
                     background_tasks,
                     tenant_id=tenant_id,
-                    campaign_id=row.campaign_id,
+                    campaign_id=campaign_resolved,
                     lead_phone=phone,
                     lead_id=row.lead_id,
                     lead_name=row.lead_name,
@@ -294,6 +315,8 @@ def consume_next_first_interaction_context(
         "payload": row.payload,
         "created_at": row.created_at.isoformat() if row.created_at else None,
         "consumed_at": row.consumed_at.isoformat() if row.consumed_at else None,
+        "campaign_id_resolved": campaign_resolved,
+        "agent_context_inbound_marked": inbound_marked,
     }
     out.update(reconcile_meta)
     return out

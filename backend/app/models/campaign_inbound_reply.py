@@ -21,5 +21,7 @@ class CampaignInboundReply(Base):
     message_text = Column(Text, nullable=False)
     forwarded_to_webhook = Column(Boolean, nullable=False, default=False)
     webhook_skip_reason = Column(String(64), nullable=True)
+    # True quando o agente consumiu GET /reception-context/next-first-interaction (contexto de 1ª msg).
+    agent_context_consumed = Column(Boolean, nullable=False, default=False)
 
     created_at = Column(DateTime, default=datetime.utcnow)

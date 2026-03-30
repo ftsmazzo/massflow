@@ -503,6 +503,7 @@ def list_inbound_replies(
                 message_text=r.message_text,
                 forwarded_to_webhook=r.forwarded_to_webhook,
                 webhook_skip_reason=r.webhook_skip_reason,
+                agent_context_consumed=bool(getattr(r, "agent_context_consumed", False)),
                 created_at=r.created_at,
             )
         )

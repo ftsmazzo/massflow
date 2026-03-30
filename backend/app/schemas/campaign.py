@@ -61,6 +61,7 @@ class CampaignInboundReplyItem(BaseModel):
     message_text: str
     forwarded_to_webhook: bool
     webhook_skip_reason: str | None
+    agent_context_consumed: bool = False
     created_at: datetime | None
 
     class Config:

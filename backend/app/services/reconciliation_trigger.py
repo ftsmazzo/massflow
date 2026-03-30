@@ -60,6 +60,22 @@ def run_reconcile_safe(
         db.close()
 
 
+def _parse_retry_delays() -> list[int]:
+    raw = (getattr(settings, "RECONCILE_SAAS_RETRY_DELAYS_SECONDS", None) or "30,60,120") or ""
+    out: list[int] = []
+    for part in str(raw).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            n = int(part)
+            if n > 0:
+                out.append(n)
+        except ValueError:
+            continue
+    return out
+
+
 def attach_reconcile_jobs_after_context_consumed(
     background_tasks: BackgroundTasks,
     tenant_id: int,
@@ -69,17 +85,17 @@ def attach_reconcile_jobs_after_context_consumed(
     lead_name: str | None,
 ) -> dict[str, Any]:
     """
-    1) Após responder o GET, roda reconciliação em background (não bloqueia o agente).
-    2) Repete após RECONCILE_SAAS_DELAY_SECONDS para capturar mensagens que ainda não estavam no SaaS.
+    1) Após responder o GET, reconciliação imediata em background.
+    2) Retries em janelas curtas (RECONCILE_SAAS_RETRY_DELAYS_SECONDS) até o SaaS refletir todas as mensagens.
     """
     out: dict[str, Any] = {
         "reconcile_saas_scheduled": False,
-        "reconcile_saas_delayed_seconds": None,
+        "reconcile_saas_retry_delays_seconds": [],
     }
     if not (settings.SAAS_CHAT_HISTORY_DATABASE_URL or "").strip():
         return out
 
-    delay = max(0, int(settings.RECONCILE_SAAS_DELAY_SECONDS or 0))
+    delays = _parse_retry_delays()
 
     background_tasks.add_task(
         run_reconcile_safe,
@@ -91,22 +107,29 @@ def attach_reconcile_jobs_after_context_consumed(
         "immediate",
     )
     out["reconcile_saas_scheduled"] = True
+    out["reconcile_saas_retry_delays_seconds"] = delays
 
-    if delay > 0:
-        out["reconcile_saas_delayed_seconds"] = delay
+    for i, delay in enumerate(delays):
 
-        def _delayed() -> None:
-            time.sleep(delay)
-            run_reconcile_safe(
-                tenant_id,
-                campaign_id,
-                lead_phone,
-                lead_id,
-                lead_name,
-                "delayed",
-            )
+        def _make_delayed(sec: int, idx: int) -> None:
+            def _run() -> None:
+                time.sleep(sec)
+                run_reconcile_safe(
+                    tenant_id,
+                    campaign_id,
+                    lead_phone,
+                    lead_id,
+                    lead_name,
+                    f"retry_{idx}_{sec}s",
+                )
 
-        t = threading.Thread(target=_delayed, name="reconcile-saas-delayed", daemon=True)
+            return _run
+
+        t = threading.Thread(
+            target=_make_delayed(delay, i),
+            name=f"reconcile-saas-{delay}s",
+            daemon=True,
+        )
         t.start()
 
     return out
