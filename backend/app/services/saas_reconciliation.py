@@ -117,8 +117,9 @@ def drop_leading_permission_row(
     seguinte. O disparo da campanha pode já ter aberto o fio com o lead; isso não exige “juntar”
     mensagens no agente — apenas reflete como o SaaS gravou a primeira troca após o disparo.
 
-    Se o texto do assistente na primeira linha **já contiver** a pergunta 1 da campanha (ou o gancho
-    “quais … dívidas”), não removemos para não perder o enunciado vindo do histórico.
+    Observação: mesmo que o texto do assistente na primeira linha já contenha a pergunta A, ainda
+    assim preferimos descartar essa linha se a resposta do lead for claramente apenas permissão
+    (para evitar alinhar A com “pode seguir”).
     """
     if not rows or not steps:
         return rows
@@ -127,19 +128,6 @@ def drop_leading_permission_row(
         return rows
     u = (rows[0].user_message or "").strip()
     if not _user_looks_like_permission_ack(u):
-        return rows
-
-    bot = (rows[0].bot_content or "")
-    bot_f = _fold_accents(bot.lower())
-    q = cfg.questions_json if isinstance(cfg.questions_json, list) else []
-    hint = ""
-    if q and isinstance(q[0], dict):
-        hint = str(q[0].get("text") or "").strip()
-    if hint:
-        hk = _fold_accents(hint[:56].lower()) if len(hint) > 56 else _fold_accents(hint.lower())
-        if hk and hk in bot_f:
-            return rows
-    if "quais" in bot_f and "divida" in bot_f:
         return rows
 
     logger.info(
@@ -309,6 +297,7 @@ def extract_step_answers(
     out: dict[str, tuple[str, str]] = {}
     row_idx = 0
 
+    # 1) Primeiro tentamos usar os hints das perguntas configuradas.
     for step_key in steps:
         step_key_norm = step_key.strip().upper()
         hint = hints.get(step_key_norm, "")
@@ -359,6 +348,41 @@ def extract_step_answers(
                 (ans[:80] + "…") if len(ans) > 80 else ans,
             )
             break
+
+    # 2) Fallback: se alguma etapa não foi preenchida (por divergência de texto/hints),
+    # tentamos um mapeamento puramente sequencial nas linhas restantes, apenas pulando acks.
+    if any(step not in out for step in steps):
+        logger.info(
+            "reconcile: usando fallback sequencial para etapas faltantes: %s",
+            [s for s in steps if s not in out],
+        )
+        # Recomeça do início para o fallback, mas sem rediscartar a linha de permissão (isso já foi feito antes).
+        row_idx_fb = 0
+        for step_key in steps:
+            step_key_norm = step_key.strip().upper()
+            if step_key_norm in out:
+                continue
+            while row_idx_fb < len(rows):
+                row = rows[row_idx_fb]
+                row_idx_fb += 1
+                qtext_raw = (row.bot_content or "").strip()
+                ans_raw = (row.user_message or "").strip()
+                if not ans_raw:
+                    continue
+                if _user_looks_like_permission_ack(ans_raw):
+                    continue
+                ans = ans_raw
+                if step_key_norm == "E":
+                    ans = normalize_answer_step_e(ans_raw)
+                qtext = qtext_raw or f"Etapa {step_key_norm}"
+                out[step_key_norm] = (qtext, ans)
+                logger.debug(
+                    "reconcile fallback extract step=%s row_id=%s preview=%s",
+                    step_key_norm,
+                    row.id,
+                    (ans[:80] + "…") if len(ans) > 80 else ans,
+                )
+                break
 
     return out
 
