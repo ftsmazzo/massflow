@@ -265,39 +265,101 @@ def slice_rows_for_latest_qualification_session(
     return rows[start:]
 
 
-def extract_step_answers(rows: list[SaaSChatRow], steps: list[str]) -> dict[str, tuple[str, str]]:
+def extract_step_answers(
+    rows: list[SaaSChatRow],
+    steps: list[str],
+    cfg: CampaignQualificationConfig,
+) -> dict[str, tuple[str, str]]:
     """
     Para cada step_key na ordem, obtém (question_text, answer).
 
     No SaaS, **na mesma linha**: `botMessage` = pergunta do assistente, `userMessage` = resposta do lead.
     `bot_content` aqui vem da query (COALESCE(botMessage, content)).
-    Antes desta função, `drop_leading_permission_row` pode remover a primeira troca (pedido de permissão
-    para perguntar + “pode”/“continue”/“siga”), para que `rows[0]` seja a etapa A de verdade.
-    Para N etapas são necessárias N linhas após o slice e o drop (sobras no fim são ignoradas).
+
+    A extração precisa ser robusta a:
+    - mensagens iniciais de permissão (“pode seguir”, “ok, vamos lá” etc.);
+    - pequenos acks no meio da conversa (“sim”, “ok”) que não respondem de fato à pergunta da etapa;
+    - outras trocas que não sejam a pergunta principal A/B/C/D/E.
+
+    Estratégia:
+    - Pré-compara o texto das perguntas configuradas em questions_json (quando disponível),
+      normalizado sem acentos.
+    - Para cada etapa, varre as linhas restantes até encontrar uma em que:
+      - exista user_message não vazia;
+      - o user_message **não** seja apenas um ack de permissão (_user_looks_like_permission_ack);
+      - e, se houver hint configurado para a etapa, o bot_content normalizado contenha esse hint.
+    - Assim, a qualificação não quebra se houver “pode seguir” ou perguntas auxiliares no meio.
     """
-    out: dict[str, tuple[str, str]] = {}
-    for i, step_key in enumerate(steps):
-        if i >= len(rows):
-            break
-        row = rows[i]
-        qtext = (row.bot_content or "").strip() or None
-        ans = (row.user_message or "").strip()
-        if not ans:
-            logger.warning(
-                "reconcile: userMessage vazio na linha id=%s (etapa %s); histórico incompleto ou formato divergente",
-                row.id,
-                step_key,
-            )
+    # Mapeia hints das perguntas configuradas (quando existirem) por step_key.
+    hints: dict[str, str] = {}
+    qcfg = cfg.questions_json if isinstance(cfg.questions_json, list) else []
+    for item in qcfg:
+        if not isinstance(item, dict):
             continue
-        if step_key == "E":
-            ans = normalize_answer_step_e(ans)
-        out[step_key] = (qtext or f"Etapa {step_key}", ans)
-        logger.debug(
-            "reconcile extract step=%s row_id=%s preview=%s",
-            step_key,
-            row.id,
-            (ans[:80] + "…") if len(ans) > 80 else ans,
-        )
+        key = str(item.get("key") or "").strip().upper()
+        if not key or key not in steps:
+            continue
+        text = str(item.get("text") or "").strip()
+        if not text:
+            continue
+        norm_hint = _fold_accents(text.lower())
+        # Limitamos o tamanho do hint para reduzir risco de mismatch por variações pequenas.
+        hints[key] = norm_hint[:72]
+
+    out: dict[str, tuple[str, str]] = {}
+    row_idx = 0
+
+    for step_key in steps:
+        step_key_norm = step_key.strip().upper()
+        hint = hints.get(step_key_norm, "")
+
+        while row_idx < len(rows):
+            row = rows[row_idx]
+            row_idx += 1
+
+            qtext_raw = (row.bot_content or "").strip()
+            ans_raw = (row.user_message or "").strip()
+
+            if not ans_raw:
+                logger.warning(
+                    "reconcile: userMessage vazio na linha id=%s (etapa %s); histórico incompleto ou formato divergente",
+                    row.id,
+                    step_key_norm,
+                )
+                continue
+
+            # Ignora respostas que são claramente apenas permissão/ack, para qualquer etapa.
+            if _user_looks_like_permission_ack(ans_raw):
+                logger.info(
+                    "reconcile: ignorando resposta de permissão id=%s (etapa %s): %r",
+                    row.id,
+                    step_key_norm,
+                    ans_raw[:80],
+                )
+                continue
+
+            # Se temos hint configurado para a etapa, só aceitamos linhas cujo bot_content
+            # pareça a pergunta daquela etapa.
+            if hint:
+                bot_norm = _fold_accents(qtext_raw.lower())
+                if hint not in bot_norm:
+                    # Essa linha não parece ser a pergunta da etapa atual; segue para a próxima.
+                    continue
+
+            ans = ans_raw
+            if step_key_norm == "E":
+                ans = normalize_answer_step_e(ans_raw)
+
+            qtext = qtext_raw or f"Etapa {step_key_norm}"
+            out[step_key_norm] = (qtext, ans)
+            logger.debug(
+                "reconcile extract step=%s row_id=%s preview=%s",
+                step_key_norm,
+                row.id,
+                (ans[:80] + "…") if len(ans) > 80 else ans,
+            )
+            break
+
     return out
 
 
@@ -399,12 +461,12 @@ def reconcile_lead_from_saas_chat(
     rows_before_perm = rows_after_slice
     rows = drop_leading_permission_row(rows_after_slice, steps, cfg)
     permission_first_row_dropped = len(rows_before_perm) > len(rows)
-    extracted = extract_step_answers(rows, steps)
+    extracted = extract_step_answers(rows, steps, cfg)
     used_fallback_slice = False
     if not extracted:
         rows_fb = slice_rows_for_latest_qualification_session(raw_rows, cfg)
         rows_fb2 = drop_leading_permission_row(rows_fb, steps, cfg)
-        extracted = extract_step_answers(rows_fb2, steps)
+        extracted = extract_step_answers(rows_fb2, steps, cfg)
         used_fallback_slice = True
     logger.info(
         "reconcile: saas rows after_slice_drop=%s raw=%s steps_cfg=%s extracted=%s",
