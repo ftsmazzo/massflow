@@ -17,11 +17,15 @@ from app.models.campaign_qualification import (
     CampaignQualificationAnswer,
     CampaignQualificationSession,
 )
+from app.models.campaign_qualification_outcome import CampaignQualificationOutcome
 from app.models.user import User
 from app.schemas.qualification import (
     QualificationAnswerIn,
+    QualificationCompletedPayloadIn,
     QualificationConfigBody,
     QualificationConfigResponse,
+    QualificationOutcomeListItem,
+    QualificationOutcomeListOut,
     QualificationSessionListItem,
     QualificationSessionListOut,
     QualificationSessionQueryOut,
@@ -227,6 +231,80 @@ def list_campaign_sessions(
         for s in rows
     ]
     return QualificationSessionListOut(campaign_id=campaign_id, total=len(out), sessions=out)
+
+
+@router.get("/campaigns/{campaign_id}/outcomes", response_model=QualificationOutcomeListOut)
+def list_campaign_qualification_outcomes(
+    campaign_id: int,
+    user: Annotated[User, Depends(get_current_user)],
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(500, ge=1, le=2000),
+):
+    """
+    Lista snapshots de qualificações concluídas gravados em `campaign_qualification_outcomes`
+    (útil para relatórios e avaliação de campanha).
+    """
+    tenant_id = user.tenant_id
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_id, Campaign.tenant_id == tenant_id).first()
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada.")
+    rows = (
+        db.query(CampaignQualificationOutcome)
+        .filter(
+            CampaignQualificationOutcome.tenant_id == tenant_id,
+            CampaignQualificationOutcome.campaign_id == campaign_id,
+        )
+        .order_by(desc(CampaignQualificationOutcome.id))
+        .limit(limit)
+        .all()
+    )
+    out = [
+        QualificationOutcomeListItem(
+            id=r.id,
+            session_id=r.session_id,
+            lead_id=r.lead_id,
+            lead_phone=r.lead_phone,
+            lead_name=r.lead_name,
+            score_total=int(r.score_total or 0),
+            classification=r.classification,
+            completed_at=r.completed_at,
+            created_at=r.created_at,
+        )
+        for r in rows
+    ]
+    return QualificationOutcomeListOut(campaign_id=campaign_id, total=len(out), outcomes=out)
+
+
+@router.post("/record-completed-outcome")
+def post_record_qualification_completed_outcome(
+    body: QualificationCompletedPayloadIn,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+):
+    """
+    Grava ou atualiza o snapshot da qualificação concluída (mesmo payload do webhook final).
+    Use no N8N após o Webhook (ou em paralelo) com `X-Massflow-Qualification-Secret`.
+    Idempotente por `session_id`.
+    """
+    _require_qualification_secret(request)
+    campaign = (
+        db.query(Campaign)
+        .filter(Campaign.id == body.campaign_id, Campaign.tenant_id == body.tenant_id)
+        .first()
+    )
+    if not campaign:
+        raise HTTPException(status_code=404, detail="Campanha não encontrada para tenant informado.")
+    payload: dict[str, Any] = dict(body.model_dump())
+    try:
+        qs.upsert_qualification_outcome(db, payload)
+        db.commit()
+    except ValueError as e:
+        db.rollback()
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception:
+        db.rollback()
+        raise
+    return {"ok": True, "session_id": body.session_id, "message": "Outcome gravado ou atualizado."}
 
 
 @router.post("/answer", response_model=QualificationSessionState)

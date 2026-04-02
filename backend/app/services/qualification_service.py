@@ -20,6 +20,7 @@ from app.models.campaign_qualification import (
     CampaignQualificationConfig,
     CampaignQualificationSession,
 )
+from app.models.campaign_qualification_outcome import CampaignQualificationOutcome
 from app.models.lead import Lead
 from app.schemas.qualification import (
     QualificationAnswerIn,
@@ -28,6 +29,52 @@ from app.schemas.qualification import (
 )
 
 logger = logging.getLogger("massflow.qualification")
+
+
+def upsert_qualification_outcome(db: Session, payload: dict[str, Any]) -> CampaignQualificationOutcome:
+    """
+    Grava ou atualiza o snapshot de qualificação concluída (uma linha por session_id).
+    Não faz commit — o chamador persiste a transação.
+    """
+    sid = payload.get("session_id")
+    if sid is None:
+        raise ValueError("session_id obrigatório para gravar outcome de qualificação.")
+    sid_int = int(sid)
+    row = (
+        db.query(CampaignQualificationOutcome)
+        .filter(CampaignQualificationOutcome.session_id == sid_int)
+        .first()
+    )
+    if row is None:
+        row = CampaignQualificationOutcome(session_id=sid_int)
+        db.add(row)
+
+    row.tenant_id = int(payload["tenant_id"])
+    row.campaign_id = int(payload["campaign_id"])
+    row.campaign_name = str(payload.get("campaign_name") or "")
+    lid = payload.get("lead_id")
+    row.lead_id = int(lid) if lid is not None else None
+    row.lead_phone = normalize_phone(str(payload.get("lead_phone") or ""))
+    ln = payload.get("lead_name")
+    row.lead_name = str(ln) if ln is not None else None
+    row.score_total = int(payload.get("score_total") or 0)
+    cl = payload.get("classification")
+    row.classification = str(cl) if cl is not None else None
+    row.notify_lawyer = bool(payload.get("notify_lawyer", True))
+    row.answers_json = list(payload.get("answers") or [])
+    row.payload_json = dict(payload)
+
+    ca = payload.get("completed_at")
+    if isinstance(ca, str) and ca.strip():
+        try:
+            s = ca.strip().replace("Z", "+00:00")
+            row.completed_at = datetime.fromisoformat(s)
+        except ValueError:
+            row.completed_at = datetime.utcnow()
+    else:
+        row.completed_at = datetime.utcnow()
+
+    return row
 
 
 def normalize_phone(v: str) -> str:
@@ -398,6 +445,10 @@ def repair_stale_qualification_session(
         "source": "massflow",
         "repaired": True,
     }
+    try:
+        upsert_qualification_outcome(db, payload)
+    except Exception:
+        logger.exception("Falha ao gravar campaign_qualification_outcomes (repair)")
     session.final_payload = payload
     db.commit()
     db.refresh(session)
@@ -562,6 +613,10 @@ def apply_qualification_answer(db: Session, body: QualificationAnswerIn) -> Qual
             "completed_at": session.completed_at.isoformat() if session.completed_at else None,
             "source": "massflow",
         }
+        try:
+            upsert_qualification_outcome(db, payload)
+        except Exception:
+            logger.exception("Falha ao gravar campaign_qualification_outcomes")
         session.final_payload = payload
         if body.send_final_webhook and webhook_url and session.notified_at is None:
             try:

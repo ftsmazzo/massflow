@@ -17,6 +17,7 @@ from app.models.campaign_qualification import (
     CampaignQualificationSession,
     CampaignQualificationAnswer,
 )
+from app.models.campaign_qualification_outcome import CampaignQualificationOutcome
 from app.models.reception_context import ReceptionContext
 from app.models.associations import list_leads, lead_tags
 
@@ -36,6 +37,7 @@ __all__ = [
     "CampaignQualificationConfig",
     "CampaignQualificationSession",
     "CampaignQualificationAnswer",
+    "CampaignQualificationOutcome",
     "ReceptionContext",
     "list_leads",
     "lead_tags",

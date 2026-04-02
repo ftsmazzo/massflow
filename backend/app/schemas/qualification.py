@@ -4,7 +4,7 @@ Schemas da qualificação por campanha.
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class QualificationConfigBody(BaseModel):
@@ -90,3 +90,45 @@ class QualificationSessionListOut(BaseModel):
     campaign_id: int
     total: int
     sessions: list[QualificationSessionListItem] = Field(default_factory=list)
+
+
+class QualificationCompletedPayloadIn(BaseModel):
+    """
+    Mesmo formato do webhook `campaign_qualification_completed` (corpo JSON).
+    Campos extras são aceitos e vão para `payload_json` ao gravar.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    event: str = "campaign_qualification_completed"
+    tenant_id: int
+    campaign_id: int
+    campaign_name: str
+    lead_id: int | None = None
+    lead_phone: str
+    lead_name: str | None = None
+    session_id: int
+    score_total: int
+    classification: str | None = None
+    notify_lawyer: bool = True
+    answers: list[dict[str, Any]] = Field(default_factory=list)
+    completed_at: str | None = None
+    source: str = "massflow"
+
+
+class QualificationOutcomeListItem(BaseModel):
+    id: int
+    session_id: int
+    lead_id: int | None = None
+    lead_phone: str
+    lead_name: str | None = None
+    score_total: int
+    classification: str | None = None
+    completed_at: datetime | None = None
+    created_at: datetime | None = None
+
+
+class QualificationOutcomeListOut(BaseModel):
+    campaign_id: int
+    total: int
+    outcomes: list[QualificationOutcomeListItem] = Field(default_factory=list)
