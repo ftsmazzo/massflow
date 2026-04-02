@@ -4,7 +4,7 @@ Schemas da qualificação por campanha.
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class QualificationConfigBody(BaseModel):
@@ -96,14 +96,17 @@ class QualificationCompletedPayloadIn(BaseModel):
     """
     Mesmo formato do webhook `campaign_qualification_completed` (corpo JSON).
     Campos extras são aceitos e vão para `payload_json` ao gravar.
+
+    Tolera tipos vindos de N8N/replays: strings numéricas, `lead_phone` como número,
+    `campaign_id` omitido (o backend resolve por `session_id` + `tenant_id`).
     """
 
     model_config = ConfigDict(extra="allow")
 
     event: str = "campaign_qualification_completed"
     tenant_id: int
-    campaign_id: int
-    campaign_name: str
+    campaign_id: int | None = None
+    campaign_name: str = ""
     lead_id: int | None = None
     lead_phone: str
     lead_name: str | None = None
@@ -114,6 +117,43 @@ class QualificationCompletedPayloadIn(BaseModel):
     answers: list[dict[str, Any]] = Field(default_factory=list)
     completed_at: str | None = None
     source: str = "massflow"
+
+    @field_validator("tenant_id", "session_id", "score_total", mode="before")
+    @classmethod
+    def _coerce_required_int(cls, v: Any) -> int:
+        if v is None or v == "":
+            raise ValueError("valor obrigatório")
+        return int(v)
+
+    @field_validator("lead_id", mode="before")
+    @classmethod
+    def _coerce_optional_int(cls, v: Any) -> int | None:
+        if v is None or v == "":
+            return None
+        return int(v)
+
+    @field_validator("campaign_id", mode="before")
+    @classmethod
+    def _coerce_optional_campaign_id(cls, v: Any) -> int | None:
+        if v is None or v == "":
+            return None
+        return int(v)
+
+    @field_validator("lead_phone", mode="before")
+    @classmethod
+    def _coerce_lead_phone_str(cls, v: Any) -> str:
+        if v is None:
+            raise ValueError("lead_phone obrigatório")
+        return "".join(c for c in str(v) if c.isdigit()) or str(v).strip()
+
+    @field_validator("notify_lawyer", mode="before")
+    @classmethod
+    def _coerce_bool(cls, v: Any) -> bool:
+        if isinstance(v, bool):
+            return v
+        if v in (None, "", 0, "0", "false", "False"):
+            return False
+        return True
 
 
 class QualificationOutcomeListItem(BaseModel):

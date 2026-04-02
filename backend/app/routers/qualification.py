@@ -287,14 +287,39 @@ def post_record_qualification_completed_outcome(
     Idempotente por `session_id`.
     """
     _require_qualification_secret(request)
+
+    campaign_id = body.campaign_id
+    if campaign_id is None:
+        sess = (
+            db.query(CampaignQualificationSession)
+            .filter(
+                CampaignQualificationSession.id == body.session_id,
+                CampaignQualificationSession.tenant_id == body.tenant_id,
+            )
+            .first()
+        )
+        if not sess:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "campaign_id ausente: inclua campaign_id no JSON ou use um session_id "
+                    "de uma sessão de qualificação existente neste tenant."
+                ),
+            )
+        campaign_id = sess.campaign_id
+
     campaign = (
         db.query(Campaign)
-        .filter(Campaign.id == body.campaign_id, Campaign.tenant_id == body.tenant_id)
+        .filter(Campaign.id == campaign_id, Campaign.tenant_id == body.tenant_id)
         .first()
     )
     if not campaign:
         raise HTTPException(status_code=404, detail="Campanha não encontrada para tenant informado.")
+
     payload: dict[str, Any] = dict(body.model_dump())
+    payload["campaign_id"] = campaign_id
+    if not str(payload.get("campaign_name") or "").strip():
+        payload["campaign_name"] = campaign.name
     try:
         qs.upsert_qualification_outcome(db, payload)
         db.commit()
