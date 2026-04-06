@@ -240,6 +240,18 @@ export const tagsApi = {
   delete: (id: number) => api.delete(`/api/tags/${id}`),
   apply: (tagId: number, contact_ids: number[]) =>
     api.post<{ applied: number; tag_id: number }>(`/api/tags/${tagId}/apply`, { contact_ids }),
+  bulkUpdate: (data: {
+    list_id?: number | null
+    contact_ids?: number[] | null
+    require_all_tag_ids?: number[]
+    without_any_tag_ids?: number[]
+    add_tag_ids?: number[]
+    remove_tag_ids?: number[]
+  }) =>
+    api.post<{ matched_leads: number; tags_added_links: number; tags_removed_links: number; capped: boolean }>(
+      '/api/tags/bulk-update',
+      data
+    ),
 }
 
 // --- Campaigns

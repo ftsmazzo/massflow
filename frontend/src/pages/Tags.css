@@ -1,6 +1,6 @@
 .tags-page {
   padding: 1.5rem;
-  max-width: 640px;
+  max-width: 720px;
   margin: 0 auto;
 }
 
@@ -10,6 +10,23 @@
   justify-content: space-between;
   gap: 1rem;
   margin-bottom: 1.25rem;
+}
+
+.tags-header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.tags-btn.secondary {
+  background: #f1f5f9;
+  color: #1e293b;
+  border: 1px solid #e2e8f0;
+}
+
+.tags-btn.secondary:hover {
+  background: #e2e8f0;
 }
 
 .tags-header h1 {
@@ -144,6 +161,138 @@
   max-width: 440px;
   max-height: 80vh;
   overflow: auto;
+}
+
+.tags-modal-xwide {
+  max-width: min(720px, 96vw);
+  max-height: 85vh;
+  overflow: auto;
+}
+
+.tags-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.85rem;
+  color: #64748b;
+  line-height: 1.45;
+}
+
+.tags-hint.small {
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+}
+
+.tags-filters-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.tags-filter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  min-width: 140px;
+}
+
+.tags-filter-field.grow {
+  flex: 1;
+  min-width: 200px;
+}
+
+.tags-filter-field select,
+.tags-filter-field input {
+  padding: 0.45rem 0.55rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+
+.tags-bulk-toolbar {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.tags-apply-tags {
+  font-size: 0.75rem;
+  color: #64748b;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tags-apply-row {
+  display: grid;
+  grid-template-columns: auto 1fr 1fr 1.2fr;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tags-bulk-section {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.tags-bulk-section h3 {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+  color: #334155;
+}
+
+.tags-bulk-two-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 600px) {
+  .tags-bulk-two-cols {
+    grid-template-columns: 1fr;
+  }
+  .tags-apply-row {
+    grid-template-columns: auto 1fr;
+  }
+  .tags-apply-tags {
+    grid-column: 2 / -1;
+  }
+}
+
+.tags-bulk-check-list {
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+  max-height: 160px;
+  overflow: auto;
+  font-size: 0.875rem;
+}
+
+.tags-bulk-check-list li {
+  margin-bottom: 0.25rem;
+}
+
+.tags-bulk-check-list label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-weight: 400;
+}
+
+.tags-form-success {
+  margin-bottom: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  color: #065f46;
+  font-size: 0.9rem;
 }
 
 .tags-modal-content h2 {
