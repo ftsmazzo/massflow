@@ -123,6 +123,14 @@
   color: #1a1d29;
 }
 
+.campaigns-card-id {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .campaigns-card-meta {
   margin: 0;
   font-size: 0.85rem;

@@ -38,6 +38,8 @@ const TYPE_LABEL: Record<string, string> = {
 
 const DELETABLE_STATUSES = new Set(['draft', 'cancelled', 'completed', 'scheduled'])
 const FIXED_WEBHOOK_URL = 'https://fabricaia-n8n.90qhxz.easypanel.host/webhook/controle-disparo'
+const FIXED_QUALIFICATION_WEBHOOK_URL =
+  'https://fabricaia-n8n.90qhxz.easypanel.host/webhook/qualificado'
 
 /** Deve coincidir com PURGE_ALL_CAMPAIGNS_CONFIRM no backend. */
 const PURGE_ALL_CAMPAIGNS_CONFIRM = 'LIMPAR_TODAS'
@@ -347,7 +349,12 @@ export default function Campaigns() {
                 </label>
               )}
               <div className="campaigns-card-main">
-                <h2 className="campaigns-card-name">{c.name}</h2>
+                <h2 className="campaigns-card-name">
+                  {c.name}{' '}
+                  <span className="campaigns-card-id" title="Use este id na automação (n8n, API)">
+                    · id {c.id}
+                  </span>
+                </h2>
                 <p className="campaigns-card-meta">
                   <span className={`campaigns-status campaigns-status--${c.status}`}>
                     {STATUS_LABEL[c.status] ?? c.status}
@@ -413,7 +420,13 @@ export default function Campaigns() {
         <CampaignForm
           lists={lists}
           onClose={() => setShowForm(false)}
-          onSuccess={() => { setShowForm(false); load() }}
+          onSuccess={(created) => {
+            setShowForm(false)
+            setSuccessMessage(
+              `Campanha criada: “${created.name}” — id ${created.id} (copie para n8n / integrações).`
+            )
+            load()
+          }}
         />
       )}
       {editingCampaign && (
@@ -675,10 +688,16 @@ function CampaignQualificationModal({
       qualificationApi.listSessions(campaign.id, 200),
     ])
       .then(([cfgRes, sesRes]) => {
-        setCfg(cfgRes.data)
-        setQuestionsText(JSON.stringify(cfgRes.data.questions_json ?? [], null, 2))
-        setScoringText(JSON.stringify(cfgRes.data.scoring_rules_json ?? {}, null, 2))
-        setClassifyText(JSON.stringify(cfgRes.data.classification_rules_json ?? {}, null, 2))
+        const raw = cfgRes.data
+        const wh = (raw.final_webhook_url ?? '').trim()
+        const cfgMerged: QualificationConfig = {
+          ...raw,
+          final_webhook_url: wh || FIXED_QUALIFICATION_WEBHOOK_URL,
+        }
+        setCfg(cfgMerged)
+        setQuestionsText(JSON.stringify(raw.questions_json ?? [], null, 2))
+        setScoringText(JSON.stringify(raw.scoring_rules_json ?? {}, null, 2))
+        setClassifyText(JSON.stringify(raw.classification_rules_json ?? {}, null, 2))
         setSessions(sesRes.data.sessions ?? [])
       })
       .catch((err) => setError(getApiErrorMessage(err)))
@@ -700,7 +719,7 @@ function CampaignQualificationModal({
       qualificationApi.saveConfig(campaign.id, {
         enabled: cfg.enabled,
         notify_lawyer: cfg.notify_lawyer,
-        final_webhook_url: cfg.final_webhook_url,
+        final_webhook_url: (cfg.final_webhook_url ?? '').trim() || FIXED_QUALIFICATION_WEBHOOK_URL,
         version: cfg.version,
         questions_json: questions,
         scoring_rules_json: scoring,
@@ -711,10 +730,15 @@ function CampaignQualificationModal({
         reconcile_notify_instance_id: cfg.reconcile_notify_instance_id ?? null,
       })
         .then((r) => {
-          setCfg(r.data)
-          setQuestionsText(JSON.stringify(r.data.questions_json ?? [], null, 2))
-          setScoringText(JSON.stringify(r.data.scoring_rules_json ?? {}, null, 2))
-          setClassifyText(JSON.stringify(r.data.classification_rules_json ?? {}, null, 2))
+          const saved = r.data
+          const wh = (saved.final_webhook_url ?? '').trim()
+          setCfg({
+            ...saved,
+            final_webhook_url: wh || FIXED_QUALIFICATION_WEBHOOK_URL,
+          })
+          setQuestionsText(JSON.stringify(saved.questions_json ?? [], null, 2))
+          setScoringText(JSON.stringify(saved.scoring_rules_json ?? {}, null, 2))
+          setClassifyText(JSON.stringify(saved.classification_rules_json ?? {}, null, 2))
         })
         .catch((err) => setError(getApiErrorMessage(err)))
         .finally(() => setSaving(false))
@@ -729,7 +753,10 @@ function CampaignQualificationModal({
       <div className="campaigns-modal-backdrop" onClick={onClose} />
       <div className="campaigns-modal-content campaigns-edit-modal">
         <h2>Qualificação da campanha</h2>
-        <p className="campaigns-form-hint">{campaign.name}</p>
+        <p className="campaigns-form-hint">
+          {campaign.name}{' '}
+          <span className="campaigns-card-id">· id {campaign.id}</span>
+        </p>
         {loading && <p className="campaigns-loading">Carregando…</p>}
         {error && <div className="campaigns-form-error">{error}</div>}
         {cfg && (
@@ -751,13 +778,16 @@ function CampaignQualificationModal({
               Notificar advogado ao concluir
             </label>
             <label>
-              Webhook final da qualificação (opcional)
+              Webhook final da qualificação
               <input
                 value={cfg.final_webhook_url ?? ''}
                 onChange={(e) => setCfg({ ...cfg, final_webhook_url: e.target.value || null })}
-                placeholder="https://.../webhook/final-qualificacao"
+                placeholder={FIXED_QUALIFICATION_WEBHOOK_URL}
               />
             </label>
+            <p className="campaigns-form-hint">
+              Padrão desta operação: <code>{FIXED_QUALIFICATION_WEBHOOK_URL}</code> (pode alterar se precisar).
+            </p>
             <fieldset className="campaigns-fieldset">
               <legend>Reconciliação SaaS (histórico chatMessages)</legend>
               <p className="campaigns-form-hint">
@@ -878,7 +908,7 @@ function CampaignForm({
 }: {
   lists: ListItem[]
   onClose: () => void
-  onSuccess: () => void
+  onSuccess: (created: CampaignItem) => void
 }) {
   const [name, setName] = useState('')
   const [listId, setListId] = useState<number | ''>('')
@@ -902,13 +932,14 @@ function CampaignForm({
       .map((k) => k.trim())
       .filter(Boolean)
     if (kw.length > 0) content.response_keywords = kw
-    campaignsApi.create({
-      name: name.trim(),
-      type,
-      list_id: Number(listId),
-      content,
-    })
-      .then(onSuccess)
+    campaignsApi
+      .create({
+        name: name.trim(),
+        type,
+        list_id: Number(listId),
+        content,
+      })
+      .then((res) => onSuccess(res.data))
       .catch((err) => setError(getApiErrorMessage(err)))
       .finally(() => setLoading(false))
   }
@@ -1092,7 +1123,11 @@ function CampaignEditForm({
       <div className="campaigns-modal-backdrop" onClick={onClose} />
       <div className="campaigns-modal-content campaigns-edit-modal">
         <h2>Editar campanha</h2>
-        <p className="campaigns-form-hint">Use {'{nome}'} no texto para personalizar. Spintax: {'{Olá|Oi}'} escolhe uma opção.</p>
+        <p className="campaigns-form-hint">
+          <span className="campaigns-card-id">id {campaign.id}</span>
+          {' · '}
+          Use {'{nome}'} no texto para personalizar. Spintax: {'{Olá|Oi}'} escolhe uma opção.
+        </p>
         <form onSubmit={handleSubmit}>
           {error && <div className="campaigns-form-error">{error}</div>}
           <label>
